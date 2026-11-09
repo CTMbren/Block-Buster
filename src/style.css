@@ -208,7 +208,7 @@ i.shard-ic, i.ore-ic { width: 11px; height: 13px; margin-right: 4px; }
 @media (prefers-reduced-motion: reduce) { .bonus-row { opacity: 1; } }
 
 /* ---------- tutorial prompt ---------- */
-.tip { position: absolute; left: 50%; top: calc(170px + var(--safe-t)); transform: translateX(-50%); width: max-content; max-width: min(320px, 86vw); text-align: center; padding: 10px 14px; border-radius: 12px; background: rgba(23, 18, 15, .88); border: 1.5px solid var(--brass); color: var(--parch); font-size: 16px; font-weight: 600; pointer-events: none; box-shadow: 0 6px 18px rgba(0, 0, 0, .5); animation: tip-in .35s ease-out; }
+.tip { position: absolute; left: 50%; top: calc(200px + var(--safe-t)); transform: translateX(-50%); width: max-content; max-width: min(320px, 86vw); text-align: center; padding: 10px 14px; border-radius: 12px; background: rgba(23, 18, 15, .88); border: 1.5px solid var(--brass); color: var(--parch); font-size: 16px; font-weight: 600; pointer-events: none; box-shadow: 0 6px 18px rgba(0, 0, 0, .5); animation: tip-in .35s ease-out; }
 .tip[hidden] { display: none; }
 @keyframes tip-in { from { opacity: 0; transform: translate(-50%, 8px); } }
 
@@ -224,3 +224,26 @@ i.shard-ic, i.ore-ic { width: 11px; height: 13px; margin-right: 4px; }
 .info-table td:nth-child(2), .info-table td:nth-child(3) { white-space: nowrap; }
 .info-table td b { color: var(--parch); }
 .info-table .fx { margin-top: 2px; }
+
+/* ---------- regions: minimap, toast, chips ---------- */
+.minimap { position: absolute; left: calc(10px + var(--safe-l)); top: calc(190px + var(--safe-t)); width: 92px; height: 92px; border-radius: 10px; background: rgba(18, 13, 10, .72); border: 1px solid var(--brass-lo); pointer-events: none; }
+.toast { position: absolute; left: 50%; bottom: calc(120px + var(--safe-b)); transform: translateX(-50%); padding: 7px 14px; border-radius: 999px; background: rgba(10, 40, 52, .92); border: 1px solid #2b6a7a; color: #bff4ff; font-size: 14px; font-weight: 600; pointer-events: none; white-space: nowrap; }
+.toast[hidden] { display: none; }
+.toast.show { animation: tip-in .3s ease-out; }
+.chip.room { color: #bff4ff; border-color: #2b6a7a; }
+.chip.room .bar i { background: linear-gradient(90deg, #4fb8d0, #bff4ff); }
+.chip.late { color: #ff9a7a; border-color: #7a3a2a; }
+#ui .hud .minimap, #ui .hud .toast { pointer-events: none; }
+.btn.go.resume { width: 100%; min-height: 72px; margin-bottom: 10px; }
+.btn.ghost.wide { width: 100%; display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+.btn.ghost.wide small { font-size: 13px; color: var(--parch-dim); }
+.btn.ghost.wide b { font-family: var(--display); font-weight: 400; font-size: 22px; }
+.gem-dot { font-style: normal; color: #ecd7ff; margin-left: 2px; }
+/* ---------- Lucky ---------- */
+.ability .lk { position: absolute; top: -6px; right: -6px; min-width: 22px; height: 20px; padding: 0 5px; border-radius: 10px; background: linear-gradient(180deg, #fff0b0, #e0a83a); color: #2a1a06; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 10px rgba(255, 214, 90, .7); }
+.ability .lk[hidden] { display: none; }
+.hidden-row { border-color: #6a4f86; }
+.hidden-row > span { color: #ecd7ff; }
+.lucky-row { margin: 8px auto 0; max-width: 420px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; font-size: 13px; color: #ffe27a; }
+.lucky-row span { padding: 3px 9px; border-radius: 999px; background: rgba(90, 64, 10, .55); border: 1px solid #8d6526; }
+.lucky-row b { font-weight: 700; }

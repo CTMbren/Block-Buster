@@ -3,7 +3,7 @@ import { Game } from './game';
 import { Input } from './input';
 import { Renderer } from './render';
 import { Ui } from './ui';
-import { loadSave, writeSave, resetSave, freshSave } from './save';
+import { loadSave, writeSave, resetSave, freshSave, gemsFoundCount, type Checkpoint } from './save';
 import { ORE_LINES, SP_ITEMS, oreCost, type OreLine, type SpId } from './economy';
 import { setMuted, unlockAudio } from './audio';
 import { Tutorial } from './tutorial';
@@ -20,16 +20,23 @@ let tutorial: Tutorial | null = null;
 let paused = false;
 const STAR_SP: Record<number, number> = { 1: 2, 2: 1, 4: 1, 8: 1 };
 
+function startGame(L: number, cp: Checkpoint | null) {
+  unlockAudio();
+  save.perm.gemsFound = gemsFoundCount(save);
+  if (!cp && save.checkpoint) { save.checkpoint = null; writeSave(save); } // starting fresh drops any saved run
+  const g = new Game(L, save.perm, cp);
+  g.smartAimOn = save.smartAimOn;
+  g.onCheckpoint = () => { save.checkpoint = g.snapshot(); writeSave(save); ui.toast('Progress saved'); };
+  game = g;
+  paused = false;
+  input.reset();
+  ui.showLevel(g);
+  tutorial = !save.tutorialDone ? new Tutorial(g, input) : null;
+}
+
 const ui = new Ui(document.getElementById('ui')!, {
-  play(L) {
-    unlockAudio();
-    game = new Game(L, save.perm);
-    game.smartAimOn = save.smartAimOn;
-    paused = false;
-    input.reset();
-    ui.showLevel(game);
-    tutorial = !save.tutorialDone ? new Tutorial(game, input) : null;
-  },
+  play(L) { startGame(L, null); },
+  resumeCheckpoint() { if (save.checkpoint) startGame(save.checkpoint.L, save.checkpoint); },
   pause() { if (game && !game.result) { paused = true; ui.showPause(save); } },
   resume() { paused = false; input.reset(); },
   abandon() { if (game) { game.finish('abandon'); paused = false; } },
@@ -63,6 +70,8 @@ function endLevel(g: Game) {
   let spGained = 0;
   for (const bit of [1, 2, 4, 8]) if (newStars & bit) spGained += STAR_SP[bit];
   save.stars[r.L] = prev | r.stars;
+  save.checkpoint = null;
+  if (r.hiddenFound) save.gems[r.L] = true;
   save.sp += spGained;
   save.ore += r.ore;
   if (r.stars & 1 && r.L > save.highest) save.highest = r.L;

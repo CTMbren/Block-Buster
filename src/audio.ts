@@ -64,3 +64,15 @@ export function sfxKeystone() {
   blip(80, 1.2, 'sine', 0.3, 0.5);
   [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => blip(f, 0.6, 'triangle', 0.1), 300 + i * 110));
 }
+
+let lastProc = 0;
+/** Lucky effect: a bright ting that climbs with each proc in the same activation. Rate-limited. */
+export function sfxProc(n: number) {
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  if (now - lastProc < 0.25) return;
+  lastProc = now;
+  blip(1568 * Math.pow(2, Math.min(n - 1, 8) / 12), 0.12, 'triangle', 0.07);
+}
+/** Soft chime near the hidden gem. */
+export function sfxChime() { [1319, 1760, 2093].forEach((f, i) => setTimeout(() => blip(f, 0.5, 'sine', 0.05), i * 120)); }

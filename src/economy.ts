@@ -43,9 +43,19 @@ export const SHOT_LEVEL_BASE = 70;
 
 // ---------- permanent (Ore and skill points) ----------
 
+// ---------- Lucky: a small chance of a bonus effect while a specialty shot is active ----------
+export const LUCK_INFO: Record<ShotId, { name: string; word: string; cap: number; rolls: string; effect: string }> = {
+  multishot: { name: 'Lucky Split', word: 'SPLIT', cap: 0.3, rolls: 'each hit', effect: 'The shot splits into 2 more at ±25°, each doing 40% damage' },
+  ricochet: { name: 'Lucky Bounce', word: 'OVERCHARGE', cap: 0.4, rolls: 'each bounce', effect: 'The bounce does 2× damage and doesn\'t use up a bounce' },
+  piercing: { name: 'Lucky Rupture', word: 'RUPTURE', cap: 0.3, rolls: 'each gem pierced', effect: 'The gem bursts for 50% damage on the 6 gems around it' },
+  poison: { name: 'Lucky Spread', word: 'SPREAD', cap: 0.2, rolls: 'each poison tick (4 per second)', effect: 'Poison jumps to a neighbouring gem' },
+};
+/** Chance creeps toward the cap with each level but never reaches it. */
+export const luckChance = (id: ShotId, n: number) => LUCK_INFO[id].cap * (1 - Math.pow(0.9, n));
+
 export type OreLine =
   | 'damage' | 'fireRate' | 'speed' | 'crit' | 'shardGain' | 'oreGain' | 'bombRange' | 'bombDmg'
-  | `${ShotId}Str` | `${ShotId}Dur` | `${ShotId}Cd`;
+  | `${ShotId}Str` | `${ShotId}Dur` | `${ShotId}Cd` | `${ShotId}Luck`;
 
 export interface OreLineInfo { id: OreLine; group: string; name: string; base: number; growth: number; effect: (n: number) => string }
 
@@ -55,11 +65,12 @@ export const ORE_LINES: OreLineInfo[] = [
   { id: 'damage', group: 'Blaster', name: 'Damage', base: 160, growth: 1.25, effect: n => `×${blasterPermMult(n).toFixed(2)}` },
   { id: 'fireRate', group: 'Blaster', name: 'Fire rate', base: 160, growth: 1.2, effect: n => `+${pct(n * 0.05)}` },
   { id: 'speed', group: 'Blaster', name: 'Shot speed', base: 100, growth: 1.18, effect: n => `+${pct(n * 0.06)}` },
-  { id: 'crit', group: 'Blaster', name: 'Crit chance', base: 200, growth: 1.22, effect: n => pct(critChance(n)) },
+  { id: 'crit', group: 'Blaster', name: 'Lucky Crit', base: 200, growth: 1.22, effect: n => pct(critChance(n)) },
   ...(['multishot', 'ricochet', 'piercing', 'poison'] as ShotId[]).flatMap(s => [
     { id: `${s}Str` as OreLine, group: SHOT_INFO[s].name, name: 'Strength', base: 240, growth: 1.18, effect: (n: number) => `+${n}` },
     { id: `${s}Dur` as OreLine, group: SHOT_INFO[s].name, name: 'Active time', base: 200, growth: 1.18, effect: (n: number) => `+${n}` },
     { id: `${s}Cd` as OreLine, group: SHOT_INFO[s].name, name: 'Cooldown', base: 200, growth: 1.18, effect: (n: number) => `+${n}` },
+    { id: `${s}Luck` as OreLine, group: SHOT_INFO[s].name, name: LUCK_INFO[s].name, base: 300, growth: 1.18, effect: (n: number) => `${(luckChance(s, n) * 100).toFixed(1)}% chance` },
   ]),
   { id: 'bombRange', group: 'Explosives', name: 'Blast radius', base: 300, growth: 1.4, effect: n => `${bombRings(n)} ring${bombRings(n) > 1 ? 's' : ''}` },
   { id: 'bombDmg', group: 'Explosives', name: 'Blast damage', base: 200, growth: 1.22, effect: n => `×${bombDmgMult(n).toFixed(2)}` },
@@ -94,6 +105,8 @@ export const SP_ITEMS: SpInfo[] = [
 export interface Perm {
   ore: Partial<Record<OreLine, number>>;
   sp: Partial<Record<SpId, number>>;
+  /** Hidden gems found so far (drives relics). */
+  gemsFound?: number;
 }
 
 export const lv = (p: Perm, id: OreLine) => p.ore[id] ?? 0;
@@ -118,7 +131,7 @@ export function shotStats(id: ShotId, inLevel: number, p: Perm) {
     extraShots: 1 + Math.floor(s / 2),
     /** Strength levels that don't add a shot/bounce/pierce give +10% damage while the shot is active. */
     dmgBonus: 1 + 0.1 * (id === 'multishot' ? s - Math.floor(s / 2) : id === 'poison' ? 0 : s - Math.floor(s / 1.5)),
-    bounces: 1 + Math.floor(s / 1.5),
+    bounces: 1 + Math.floor(s / 1.5) + (relicCount(p) >= 2 ? 1 : 0),
     pierces: 1 + Math.floor(s / 1.5),
     poisonFrac: 0.5 + 0.1 * s, // poison damage per second as a fraction of shot damage
     poisonTime: 3 + 0.5 * s,
@@ -128,7 +141,7 @@ export function shotStats(id: ShotId, inLevel: number, p: Perm) {
 export function blasterStats(boosts: Record<BoostId, number>, p: Perm) {
   const mastery = Math.pow(1.05, p.sp.mastery ?? 0);
   return {
-    damage: blasterPermMult(lv(p, 'damage')) * mastery * Math.pow(1.35, boosts.damage),
+    damage: blasterPermMult(lv(p, 'damage')) * mastery * relicDamageMult(p) * Math.pow(1.35, boosts.damage),
     fireRate: Math.min(22, 4 * (1 + 0.05 * lv(p, 'fireRate')) * (1 + 0.15 * boosts.fireRate)),
     speed: 520 * (1 + 0.06 * lv(p, 'speed')) * (1 + 0.1 * boosts.speed),
     range: 7.5 * (1 + 0.1 * boosts.range), // in hexes
@@ -139,8 +152,23 @@ export function blasterStats(boosts: Record<BoostId, number>, p: Perm) {
 /** Bonus Shards at the start of a level from the Head start skill (n upgrades). */
 export const headStartShards = (n: number, L: number) => Math.round(50 * n * (levelBaseHp(L) / levelBaseHp(1)));
 
-export const shardGainMult = (p: Perm) => 1 + Math.min(1, lv(p, 'shardGain') * 0.05);
-export const oreGainMult = (p: Perm) => 1 + Math.min(1, lv(p, 'oreGain') * 0.05);
+export const shardGainMult = (p: Perm) => (1 + Math.min(1, lv(p, 'shardGain') * 0.05)) * (relicCount(p) >= 3 ? 1.1 : 1);
+export const oreGainMult = (p: Perm) => (1 + Math.min(1, lv(p, 'oreGain') * 0.05)) * (relicCount(p) >= 1 ? 1.15 : 1);
+
+// ---------- hidden gems and relics ----------
+export const RELICS = [
+  { name: "Prospector's Lens", desc: '+15% Ore from everything' },
+  { name: 'Spare Spring', desc: 'Ricochet gets +1 bounce' },
+  { name: 'Deep Pockets', desc: '+10% Shards from everything' },
+  { name: 'Gold Sense', desc: 'Golden gems and the hidden gem show on the minimap' },
+  { name: 'Steady Hands', desc: '+5% damage, and +2% more for every 10 hidden gems after this' },
+];
+export const GEMS_PER_RELIC = 10;
+export const relicCount = (p: Perm) => Math.floor((p.gemsFound ?? 0) / GEMS_PER_RELIC);
+export const relicDamageMult = (p: Perm) => { const n = relicCount(p); return n >= 5 ? 1.05 + 0.02 * (n - 5) : 1; };
+
+/** Par time for the Par star on region levels, in seconds. */
+export const parSeconds = (L: number) => Math.round(7.5 * 60 + Math.min(L - 6, 14) * 6);
 
 // ---------- formatting ----------
 

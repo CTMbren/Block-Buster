@@ -16,6 +16,11 @@ A top-down hex-grid shooter for the browser, built mobile-first. Drill outward t
 - From level 6 some Keystones get an armored shell; from level 10 generators come in linked pairs that must break within 8 seconds of each other.
 - Special gems: armored, explosive, golden, Ore veins and deposits, geodes (big Ore), and regenerating gems from level 9.
 - Breaking the Keystone opens an exit; walk into it, or the mine collapses after 90 seconds. Ore gems pay double during the collapse.
+- **Sealed rooms (level 6+):** the mine is split into rooms behind cyan seals. Clear a room to trigger a Breach: the seal shatters, the next room takes a shockwave, you get a Shard burst and your cooldowns refill, and progress is saved. The last few stragglers in a room crumble on their own. Twin rooms from level 6, a chain of three from level 11.
+- **Region stars:** Keystone, Par (open the force field before the par timer runs out) and Vault (break the 3 golds to open a gold-sealed side room, then clear it).
+- **Hidden gem (level 8+):** each level hides one glowing gem in a walled pocket. Direct hits do nothing; it needs a bounce, a pierce or a blast. It chimes when you're close. Found gems are marked ◆ in the level picker, and every 10 earns a permanent relic.
+- **Lucky effects:** each specialty shot has a 4th Ore line, a small chance per hit while active: Lucky Split (Multishot), Lucky Overcharge (Ricochet), Lucky Rupture (Piercing), Lucky Spread (Poison). Crit is now Lucky Crit.
+- A minimap shows the rooms, seals and your position.
 - Installs to the home screen and works offline.
 
 ## Currencies
@@ -39,7 +44,8 @@ npm run build    # type-check and build to dist/
 Code lives in `src/`:
 
 - `economy.ts` — every formula: level scaling, costs, upgrade effects
-- `level.ts` — seeded procedural level generator
+- `level.ts` — seeded procedural level generator (open disc, levels 1–5)
+- `regions.ts` — sealed-room level generator (level 6+)
 - `game.ts` — in-level simulation (movement, shots, damage, rewards)
 - `render.ts` — canvas renderer (crystal mine style)
 - `ui.ts`, `style.css` — HUD, shop, results and upgrade screens

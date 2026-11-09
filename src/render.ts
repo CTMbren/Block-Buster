@@ -251,6 +251,15 @@ export class Renderer {
         }
         case Kind.Generator: blit(this.generator, c.x, c.y); break;
         case Kind.Keystone: blit(this.keystone, c.x, c.y); break;
+        case Kind.Seal: {
+          // glowing membrane; the vault's seal is gold
+          const gold = game.level.vault && c.region === game.level.vault.id;
+          blit(this.floor[0], c.x, c.y);
+          ctx.beginPath(); hexPath(ctx, c.x, c.y, HEX_R * 0.98);
+          ctx.fillStyle = gold ? 'rgba(255,214,90,.42)' : 'rgba(127,230,255,.32)'; ctx.fill();
+          ctx.strokeStyle = gold ? 'rgba(255,226,122,.9)' : 'rgba(191,244,255,.85)'; ctx.lineWidth = 1.6; ctx.stroke();
+          break;
+        }
       }
     }
 
@@ -295,6 +304,26 @@ export class Renderer {
       if (c.poisonT > 0 && c.kind === Kind.Gem) {
         ctx.fillStyle = `rgba(120,255,140,${0.18 + 0.1 * pulse})`;
         ctx.beginPath(); hexPath(ctx, c.x, c.y, HEX_R * 0.8); ctx.fill();
+      }
+      if (c.kind === Kind.Gem && c.collapsing) {
+        // stragglers crack and glow red as they crumble
+        ctx.strokeStyle = `rgba(255,90,60,${0.5 + 0.4 * pulse})`; ctx.lineWidth = 1.8;
+        ctx.beginPath(); ctx.moveTo(c.x - 9, c.y - 4); ctx.lineTo(c.x - 1, c.y + 2); ctx.lineTo(c.x + 4, c.y - 6); ctx.moveTo(c.x - 1, c.y + 2); ctx.lineTo(c.x + 2, c.y + 10); ctx.stroke();
+        ctx.beginPath(); hexPath(ctx, c.x, c.y, HEX_R * 0.88); ctx.strokeStyle = `rgba(255,90,60,${0.3 + 0.3 * pulse})`; ctx.stroke();
+      }
+      if (c.kind === Kind.Gem && c.hidden) {
+        // the hidden gem: a faint pulse through the rock, brighter up close
+        const d = Math.hypot(c.x - game.player.x, c.y - game.player.y) / HEX_W;
+        const near = Math.max(0, Math.min(1, (4 - d) / 2));
+        const breath = 0.5 + 0.5 * Math.sin(this.t * Math.PI); // 0.5 Hz
+        const a = 0.12 + 0.25 * breath + 0.5 * near;
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, HEX_W * (1.6 + near));
+        g.addColorStop(0, `rgba(236,215,255,${a})`); g.addColorStop(1, 'rgba(236,215,255,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c.x, c.y, HEX_W * (1.6 + near), 0, 7); ctx.fill();
+        ctx.restore();
+        ctx.beginPath(); hexPath(ctx, c.x, c.y, HEX_R * 0.7);
+        ctx.fillStyle = `rgba(246,233,255,${0.25 + 0.6 * near})`; ctx.fill();
       }
       if (c.flash > 0 && c.kind !== Kind.Floor && c.kind !== Kind.Bedrock) {
         ctx.fillStyle = `rgba(255,255,255,${c.flash * 0.55})`;
@@ -359,7 +388,7 @@ export class Renderer {
       const c = game.cellAtPixel(x, y);
       if (!c) break;
       if (c === last || c.kind === Kind.Floor) { if (c !== last) last = null; continue; }
-      const hard = c.kind === Kind.Bedrock || (c.kind === Kind.Keystone && game.shielded);
+      const hard = c.kind === Kind.Bedrock || c.kind === Kind.Seal || (c.kind === Kind.Keystone && game.shielded);
       if (!hard && pierce > 0) { pierce--; last = c; continue; }
       segs.push([sx, sy, x, y, bounced]);
       if (bounces > 0) {
@@ -600,6 +629,12 @@ export class Renderer {
     const targets: { x: number; y: number; col: string; label: string; big: boolean }[] = [];
     if (!k.broken || game.gateOpen) targets.push({ x: k.x, y: k.y, col: '#ffd27c', label: game.gateOpen ? 'EXIT' : game.shielded ? 'KEYSTONE · shielded' : 'KEYSTONE', big: true });
     if (game.shielded) for (const g of game.level.generators) if (!g.broken) targets.push({ x: g.x, y: g.y, col: '#7fe6ff', label: '', big: false });
+    // last few gems in the room you're in: small orange arrows once it's 90% cleared
+    const rg = game.currentRegion;
+    if (rg && !rg.cleared && game.regionLeft[rg.id] <= Math.max(3, rg.gemTotal * 0.1)) {
+      const left = rg.gems.filter(g => g.kind === Kind.Gem).sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y)).slice(0, 3);
+      for (const g of left) targets.push({ x: g.x, y: g.y, col: '#ff9a5a', label: '', big: false });
+    }
     const margin = 34, top = 120, bottom = 150;
     const pulse = 0.5 + 0.5 * Math.sin(this.t * 4);
     for (const t of targets) {

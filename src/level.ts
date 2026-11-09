@@ -1,12 +1,13 @@
 // Procedural level generator. The same level number always builds the same map.
 import { DIRS, hexDist, hexToPixel } from './hex';
 import { Rng, hash2 } from './rng';
+import { generateRegionLevel } from './regions';
 import { generatorCount, levelBaseHp, levelRadius } from './economy';
 
 /** Gems take this many times more hits than the base HP suggests; Shards pay back 1/HP_SCALE per HP. */
 export const HP_SCALE = 1.6;
 
-export enum Kind { Floor = 1, Gem = 2, Bedrock = 3, Keystone = 4, Generator = 5 }
+export enum Kind { Floor = 1, Gem = 2, Bedrock = 3, Keystone = 4, Generator = 5, Seal = 6 }
 
 export interface Entity {
   hp: number; maxHp: number; x: number; y: number; cells: Cell[]; broken: boolean;
@@ -32,6 +33,28 @@ export interface Cell {
   flash: number;
   poisonDps: number; poisonT: number;
   entity: Entity | null;
+  /** Region index on region levels (-1 = none / disc level). */
+  region: number;
+  /** The hidden gem: only indirect damage (bounces, pierces, blasts, poison) cracks it. */
+  hidden: boolean;
+  /** Last stragglers of a region crumble on their own. */
+  collapsing: boolean;
+  /** Poison that arrived by Lucky Spread can't spread again. */
+  poisonChild: boolean;
+  spreadT: number;
+}
+
+export interface Region {
+  id: number;
+  vault: boolean;
+  x: number; y: number;
+  /** Gems that must be broken to clear this region (excludes the hidden gem). */
+  gems: Cell[];
+  gemTotal: number;
+  /** Seal cells this region's clear opens (vault: opened by the golds instead). */
+  seal: Cell[];
+  next: number;
+  cleared: boolean;
 }
 
 export interface Level {
@@ -50,9 +73,31 @@ export interface Level {
   armorValue: number;
   /** HP that maps to the middle of the colour ladder for this level. */
   hpUnit: number;
+  spawn: { x: number; y: number };
+  /** Region levels only (from REGION_LEVEL). */
+  regions: Region[];
+  vault: Region | null;
+  hiddenGem: Cell | null;
+}
+
+export const REGION_LEVEL = 6;
+export const HIDDEN_GEM_LEVEL = 8;
+
+export function makeCell(q: number, r: number, idx: number, kind: Kind, L: number, border = false): Cell {
+  const [x, y] = hexToPixel(q, r);
+  return {
+    q, r, x, y, idx, kind, hp: 0, maxHp: 0,
+    gold: false, ore: false, armor: false, boom: false, oreAmt: 0, geode: false, regen: false, idleT: 0, border,
+    shade: hash2(q, r, L), flash: 0, poisonDps: 0, poisonT: 0, entity: null,
+    region: -1, hidden: false, collapsing: false, poisonChild: false, spreadT: 0,
+  };
 }
 
 export function generateLevel(L: number): Level {
+  return L >= REGION_LEVEL ? generateRegionLevel(L) : generateDiscLevel(L);
+}
+
+export function generateDiscLevel(L: number): Level {
   const rng = new Rng(L * 7919 + 13);
   const N = levelRadius(L);
   const base = levelBaseHp(L);
@@ -65,12 +110,7 @@ export function generateLevel(L: number): Level {
   for (let q = -N; q <= N; q++) for (let r = -N; r <= N; r++) {
     const d = hexDist(q, r);
     if (d > N) continue;
-    const [x, y] = hexToPixel(q, r);
-    const c: Cell = {
-      q, r, x, y, idx: key(q, r), kind: d === N ? Kind.Bedrock : Kind.Gem, hp: 0, maxHp: 0,
-      gold: false, ore: false, armor: false, boom: false, oreAmt: 0, geode: false, regen: false, idleT: 0, border: d === N,
-      shade: hash2(q, r, L), flash: 0, poisonDps: 0, poisonT: 0, entity: null,
-    };
+    const c = makeCell(q, r, key(q, r), d === N ? Kind.Bedrock : Kind.Gem, L, d === N);
     grid[c.idx] = c;
     cells.push(c);
   }
@@ -236,11 +276,12 @@ export function generateLevel(L: number): Level {
     shell,
     armorValue: base * HP_SCALE * 0.45,
     hpUnit: base * HP_SCALE,
+    spawn: { x: 0, y: 0 }, regions: [], vault: null, hiddenGem: null,
   };
 }
 
 /** Shortest route that prefers not to cross walls; any inner walls on it become gems. */
-function carvePath(from: Cell, to: Cell, nbrs: (c: Cell) => Cell[]) {
+export function carvePath(from: Cell, to: Cell, nbrs: (c: Cell) => Cell[]) {
   const dist = new Map<Cell, number>([[from, 0]]);
   const prev = new Map<Cell, Cell>();
   const dq: Cell[] = [from];

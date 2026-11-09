@@ -1,11 +1,13 @@
 // DOM overlay: HUD, ability buttons, shop tray, pause, results and the permanent upgrade shop.
 import {
   BOOSTS, BOOST_INFO, ORE_LINES, SHOTS, SHOT_INFO, SP_ITEMS, CLEAR_TARGET,
-  abilitySlots, availableShots, fmt, oreCost, blasterStats, shotStats,
+  abilitySlots, availableShots, fmt, oreCost, blasterStats, shotStats, LUCK_INFO, luckChance, RELICS, GEMS_PER_RELIC,
   type ShotId, type OreLine,
 } from './economy';
 import type { Game, LevelResult } from './game';
 import { CHALLENGE_BIT, challengeLabel, challengeTitle } from './challenge';
+import { HIDDEN_GEM_LEVEL, Kind } from './level';
+import { gemsFoundCount } from './save';
 import type { SaveData } from './save';
 
 const $ = <T extends HTMLElement = HTMLElement>(root: ParentNode, sel: string) => root.querySelector(sel) as T;
@@ -13,6 +15,7 @@ const h = (html: string) => { const t = document.createElement('template'); t.in
 
 export interface UiHandlers {
   play(level: number): void;
+  resumeCheckpoint(): void;
   resume(): void;
   pause(): void;
   abandon(): void;
@@ -49,7 +52,8 @@ export class Ui {
         <div class="title-card plate">
           <div class="logo">Block Buster</div>
           <div class="sub">Drill through the crystal mine. Break the Keystone.</div>
-          <button class="btn go" data-play="${next}"><small>Enter level</small><b>${next}</b></button>
+          ${save.checkpoint ? `<button class="btn go resume" data-resume-cp><small>Resume level ${save.checkpoint.L} · room ${save.checkpoint.cleared.length + 1}</small><b>Continue</b></button>` : ''}
+          <button class="btn ${save.checkpoint ? 'ghost wide' : 'go'}" data-play="${next}"><small>Enter level</small><b>${next}</b></button>
           ${save.highest > 0 ? `<div class="row-btns"><button class="btn ghost" data-pick>Choose level…</button></div>` : ''}
           <div class="howto">
             <div><b>Move</b><span>Drag on the left side (WASD)</span></div>
@@ -68,6 +72,7 @@ export class Ui {
       const t = (e.target as HTMLElement).closest('button');
       if (!t) return;
       if (t.dataset.play) this.on.play(+t.dataset.play);
+      if (t.hasAttribute('data-resume-cp')) this.on.resumeCheckpoint();
       if (t.hasAttribute('data-mute')) { this.on.toggleMute(); this.showTitle(save); }
       if (t.hasAttribute('data-pick')) this.showLevelPicker(save);
       if (t.hasAttribute('data-upgrades')) this.showResults(null, save);
@@ -80,7 +85,7 @@ export class Ui {
     const cells = Array.from({ length: max }, (_, i) => {
       const L = i + 1, s = save.stars[L] ?? 0;
       const n = (s & 1 ? 1 : 0) + (s & 2 ? 1 : 0) + (s & 4 ? 1 : 0);
-      const bonus = s & CHALLENGE_BIT ? '<i class="bonus-dot">✦</i>' : '';
+      const bonus = (s & CHALLENGE_BIT ? '<i class="bonus-dot">✦</i>' : '') + (save.gems[L] ? '<i class="gem-dot">◆</i>' : '');
       return `<button class="lvl-cell ${L === max ? 'next' : ''}" data-play="${L}"><b>${L}</b><span>${'★'.repeat(n)}${'☆'.repeat(3 - n)}${bonus}</span></button>`;
     }).reverse().join('');
     const el = h(`<div class="modal"><div class="plate sheet"><div class="sheet-head"><h2>Choose level</h2><button class="x" data-close>✕</button></div>
@@ -111,6 +116,8 @@ export class Ui {
         <div class="objectives" data-obj></div>
         <div class="collapse" data-collapse hidden></div>
         <div class="tip" data-tip hidden></div>
+        <canvas class="minimap" data-minimap></canvas>
+        <div class="toast" data-toast hidden></div>
         <div class="abilities" data-abilities></div>
         <div class="tray" data-tray hidden></div>
       </div>`);
@@ -131,7 +138,7 @@ export class Ui {
     availableShots(game.perm).forEach(id => {
       const info = SHOT_INFO[id];
       const b = h(`<button class="ability" style="--c:${info.color}" aria-label="${info.name}">
-        <span class="ring"></span><span class="ic">${info.icon}</span><span class="t"></span></button>`);
+        <span class="ring"></span><span class="ic">${info.icon}</span><span class="t"></span><span class="lk" hidden></span></button>`);
       press(b, () => { if (game.shots[id].lvl === 0) this.toggleShop(game, true); else game.triggerShot(id); });
       ab.appendChild(b);
       this.abilityEls[id] = b;
@@ -230,11 +237,19 @@ export class Ui {
       el.style.setProperty('--p', String(p));
       const t = el.querySelector('.t')!;
       if (t.textContent !== txt) t.textContent = txt;
+      const lk = el.querySelector('.lk') as HTMLElement;
+      const n = st.active > 0 ? game.activeProcs[id] : 0;
+      if (lk.hidden !== !n) lk.hidden = !n;
+      if (n && lk.textContent !== `×${n}`) lk.textContent = `×${n}`;
     }
+    this.minimapT -= 1 / 60;
+    if (this.minimapT <= 0) { this.minimapT = 0.25; this.drawMinimap(game); }
     const lv = game.level;
     const ch = game.challenge;
     const chText = challengeLabel(ch, game.time);
-    const key = [chText, ch.done, Math.floor(game.shards), Math.floor(game.oreEarned), game.goldsBroken, Math.floor(game.clearPct * 100), game.generatorsLeft, lv.keystone.broken, game.gateOpen ? Math.ceil(game.collapseT) : -1, game.anythingAffordable()].join('|');
+    const rg = game.currentRegion;
+    const parLeft = Math.ceil(game.par - game.time);
+    const key = [rg?.id, rg ? game.regionLeft[rg.id] : 0, game.vaultOpen, game.vaultCleared, game.regionLevel && !lv.keystone.broken ? parLeft : 0, chText, ch.done, Math.floor(game.shards), Math.floor(game.oreEarned), game.goldsBroken, Math.floor(game.clearPct * 100), game.generatorsLeft, lv.keystone.broken, game.gateOpen ? Math.ceil(game.collapseT) : -1, game.anythingAffordable()].join('|');
     if (!force && key === this.lastHud) { if (this.shopOpen) this.renderShop(game); return; }
     this.lastHud = key;
     $(this.hud, '[data-shards]').textContent = fmt(game.shards);
@@ -244,9 +259,21 @@ export class Ui {
     const objs = [
       lv.keystone.broken ? `<div class="chip done">◆ Keystone</div>` :
         gens && game.generatorsLeft ? `<div class="chip field">⌁ Generators ${gens - game.generatorsLeft}/${gens}</div>` : `<div class="chip key">◆ Keystone</div>`,
-      `<div class="chip ${game.goldsBroken >= lv.goldTotal ? 'done' : 'gold'}">★ Gold ${game.goldsBroken}/${lv.goldTotal}</div>`,
-      `<div class="chip ${game.clearPct >= CLEAR_TARGET ? 'done' : ''}">Clear ${clear}%<span class="bar"><i style="width:${Math.min(100, clear / CLEAR_TARGET)}%"></i></span></div>`,
     ];
+    if (game.regionLevel) {
+      const main = lv.regions.filter(r => !r.vault);
+      if (rg && !rg.cleared) {
+        const pct = Math.floor((1 - game.regionLeft[rg.id] / Math.max(1, rg.gemTotal)) * 100);
+        const name = rg.vault ? 'Vault' : `Room ${main.indexOf(rg) + 1}/${main.length}`;
+        objs.push(`<div class="chip room">${name} ${pct}%<span class="bar"><i style="width:${pct}%"></i></span></div>`);
+      }
+      objs.push(game.vaultCleared ? `<div class="chip done">★ Vault</div>` : game.vaultOpen ? `<div class="chip gold">★ Vault open</div>` : `<div class="chip gold">★ Vault: gold ${game.goldsBroken}/${lv.goldTotal}</div>`);
+      if (lv.keystone.broken) objs.push(`<div class="chip ${game.keystoneTime <= game.par ? 'done' : 'late'}">⏱ Par ${game.keystoneTime <= game.par ? '✓' : 'missed'}</div>`);
+      else objs.push(`<div class="chip ${parLeft < 0 ? 'late' : ''}">⏱ Par ${parLeft < 0 ? 'missed' : `${Math.floor(parLeft / 60)}:${String(parLeft % 60).padStart(2, '0')}`}</div>`);
+    } else {
+      objs.push(`<div class="chip ${game.goldsBroken >= lv.goldTotal ? 'done' : 'gold'}">★ Gold ${game.goldsBroken}/${lv.goldTotal}</div>`);
+      objs.push(`<div class="chip ${game.clearPct >= CLEAR_TARGET ? 'done' : ''}">Clear ${clear}%<span class="bar"><i style="width:${Math.min(100, clear / CLEAR_TARGET)}%"></i></span></div>`);
+    }
     objs.push(`<div class="chip bonus ${ch.done ? 'done' : ''}">✦ ${ch.done ? 'Bonus complete' : chText}</div>`);
     $(this.hud, '[data-obj]').innerHTML = objs.join('');
     const col = $(this.hud, '[data-collapse]');
@@ -254,6 +281,52 @@ export class Ui {
     $(this.hud, '[data-shop]').classList.toggle('glow', game.anythingAffordable());
     if (this.shopOpen) this.renderShop(game);
   }
+
+  private minimapT = 0;
+  private mm: { game: Game; minX: number; minY: number; scale: number } | null = null;
+  /** Minimap: walls, rock, seals, objectives and you. */
+  drawMinimap(game: Game) {
+    const cv = this.hud?.querySelector('[data-minimap]') as HTMLCanvasElement | null;
+    if (!cv) return;
+    const lv = game.level, CSS = 92, dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (!this.mm || this.mm.game !== game) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const c of lv.cells) { minX = Math.min(minX, c.x); minY = Math.min(minY, c.y); maxX = Math.max(maxX, c.x); maxY = Math.max(maxY, c.y); }
+      const scale = (CSS - 8) / Math.max(maxX - minX, maxY - minY);
+      this.mm = { game, minX: minX - (CSS - 8 - (maxX - minX) * scale) / 2 / scale, minY: minY - (CSS - 8 - (maxY - minY) * scale) / 2 / scale, scale };
+      cv.width = CSS * dpr; cv.height = CSS * dpr; cv.style.width = cv.style.height = CSS + 'px';
+    }
+    const { minX, minY, scale } = this.mm;
+    const g = cv.getContext('2d')!;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, CSS, CSS);
+    const X = (x: number) => 4 + (x - minX) * scale, Y = (y: number) => 4 + (y - minY) * scale;
+    const sz = Math.max(1.4, 38 * scale);
+    const sense = Math.floor((game.perm.gemsFound ?? 0) / 10) >= 4;
+    for (const c of lv.cells) {
+      let col = '';
+      switch (c.kind) {
+        case Kind.Bedrock: col = 'rgba(120,112,135,.75)'; break;
+        case Kind.Gem: col = c.gold && sense ? '#ffd65a' : c.hidden ? (sense ? '#ecd7ff' : 'rgba(150,120,170,.45)') : 'rgba(150,120,170,.45)'; break;
+        case Kind.Floor: col = 'rgba(120,90,60,.55)'; break;
+        case Kind.Seal: col = lv.vault && c.region === lv.vault.id ? '#ffd65a' : '#7fe6ff'; break;
+        case Kind.Keystone: col = '#ffd27c'; break;
+        case Kind.Generator: col = '#7fe6ff'; break;
+      }
+      g.fillStyle = col; g.fillRect(X(c.x) - sz / 2, Y(c.y) - sz / 2, sz, sz);
+    }
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(X(game.player.x), Y(game.player.y), 2.6, 0, 7); g.fill();
+    g.strokeStyle = '#ffb35a'; g.lineWidth = 1; g.stroke();
+  }
+
+  toast(text: string) {
+    const el = this.hud?.querySelector('[data-toast]') as HTMLElement | null;
+    if (!el) return;
+    el.textContent = text; el.hidden = false;
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    clearTimeout(this.toastT); this.toastT = window.setTimeout(() => { el.hidden = true; }, 2200);
+  }
+  private toastT = 0;
 
   private lastTip: string | null = null;
   setTip(text: string | null) {
@@ -288,9 +361,11 @@ export class Ui {
   showResults(res: (LevelResult & { newStars: number; spGained: number }) | null, save: SaveData) {
     this.clear();
     const next = save.highest + 1;
-    const starHtml = res ? [
-      [1, 'Break the Keystone'], [2, `Clear ${Math.round(CLEAR_TARGET * 100)}% of gems`], [4, 'All golden gems'],
-    ].map(([bit, label], i) => {
+    const mmss = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+    const starLabels: [number, string][] = res?.regionLevel
+      ? [[1, 'Break the Keystone'], [2, `Par ${mmss(res.par)}${res.keystoneTime > 0 ? ` (${mmss(res.keystoneTime)})` : ''}`], [4, 'Clear the Vault']]
+      : [[1, 'Break the Keystone'], [2, `Clear ${Math.round(CLEAR_TARGET * 100)}% of gems`], [4, 'All golden gems']];
+    const starHtml = res ? starLabels.map(([bit, label], i) => {
       const got = res.stars & (bit as number);
       const fresh = res.newStars & (bit as number);
       return `<div class="star ${got ? 'got' : 'miss'}" style="animation-delay:${0.25 + i * 0.35}s"><span>★</span><small>${label}</small>${fresh ? '<em>+SP</em>' : ''}</div>`;
@@ -299,16 +374,20 @@ export class Ui {
       const got = res.stars & CHALLENGE_BIT, fresh = res.newStars & CHALLENGE_BIT;
       return `<div class="bonus-row ${got ? 'got' : 'miss'}"><span>✦</span><div><b>Bonus</b> ${challengeTitle(res.challenge)}</div>${fresh ? '<em>+1 SP</em>' : got ? '<small>done before</small>' : '<small>missed</small>'}</div>`;
     })() : '';
+    const found = gemsFoundCount(save);
+    const hiddenHtml = res && res.L >= HIDDEN_GEM_LEVEL ? `<div class="bonus-row hidden-row ${save.gems[res.L] ? 'got' : 'miss'}"><span>◆</span><div><b>Hidden gem</b> ${res.hiddenFound ? 'found!' : save.gems[res.L] ? 'found before' : 'not found'} · ${found} collected, next relic at ${(Math.floor(found / GEMS_PER_RELIC) + 1) * GEMS_PER_RELIC}</div></div>` : '';
+    const procTotal = res ? SHOTS.reduce((a, id) => a + (res.procs[id] ?? 0), 0) : 0;
+    const procHtml = procTotal ? `<div class="lucky-row">${SHOTS.filter(id => res!.procs[id]).map(id => `<span><b>${LUCK_INFO[id].name}</b> ×${res!.procs[id]}</span>`).join('')}</div>` : '';
     const title = !res ? 'Workshop' : res.reason === 'abandon' ? 'Level left' : res.reason === 'collapse' ? 'Mine collapsed' : 'Level cleared';
     const el = h(`
       <div class="screen results">
         <div class="res-top">
           <h2>${title}${res ? ` <span>· Level ${res.L}</span>` : ''}</h2>
-          ${res ? `<div class="stars">${starHtml}</div>${bonusHtml}
+          ${res ? `<div class="stars">${starHtml}</div>${bonusHtml}${hiddenHtml}${procHtml}
           <div class="rewards">
             <div class="rw plate"><span class="sp-ic">✦</span><b>+${res.spGained}</b><small>skill points</small></div>
             <div class="rw plate"><span class="ore-ic"></span><b>+${fmt(res.ore)}</b><small>Ore (${fmt(res.salvage)} salvage)</small></div>
-            <div class="rw plate"><b>${Math.floor(res.time / 60)}:${String(Math.floor(res.time % 60)).padStart(2, '0')}</b><small>time · ${Math.round(res.clearPct * 100)}% clear · gold ${res.golds}/${res.goldTotal}</small></div>
+            <div class="rw plate"><b>${Math.floor(res.time / 60)}:${String(Math.floor(res.time % 60)).padStart(2, '0')}</b><small>time · ${Math.round(res.clearPct * 100)}% clear${res.regionLevel ? '' : ` · gold ${res.golds}/${res.goldTotal}`}</small></div>
           </div>` : ''}
         </div>
         <div class="plate upgrades">
@@ -338,7 +417,12 @@ export class Ui {
             <button class="buy ${can ? '' : 'off'}" data-ore-buy="${l.id}" ${can ? '' : 'disabled'}><small>Upgrade</small><span><i class="ore-ic"></i>${fmt(cost)}</span></button></div>`;
         }).join('');
       } else {
-        list.innerHTML = SP_ITEMS.map(it => {
+        const nRel = Math.floor(found / GEMS_PER_RELIC);
+        const relicHtml = `<div class="grp">Relics <span class="slots">◆ ${found} hidden gems</span></div>` + RELICS.map((r, i) => {
+          const have = i < nRel;
+          return `<div class="row ${have ? '' : 'locked'}"><span class="ric" style="--c:#ecd7ff">◆</span><div class="txt"><div class="nm">${r.name}</div><div class="fx">${r.desc}${have ? '' : ` · unlocks at ${(i + 1) * GEMS_PER_RELIC} hidden gems`}</div></div>${have ? '<span class="owned-tag">Active</span>' : ''}</div>`;
+        }).join('') + `<div class="grp">Unlocks</div>`;
+        list.innerHTML = relicHtml + SP_ITEMS.map(it => {
           const owned = save.perm.sp[it.id] ?? 0;
           const maxed = owned >= it.max;
           const blocked = it.requires && !save.perm.sp[it.requires];
@@ -393,6 +477,7 @@ export class Ui {
           ${row('Strength', lvOf(`${id}Str` as OreLine), strWhat[id], detail(id, now), detail(id, nStr))}
           ${row('Active time', lvOf(`${id}Dur` as OreLine), 'How long it stays on after you tap it (approaches 8s)', `${now.active.toFixed(1)}s`, `${nDur.active.toFixed(1)}s`)}
           ${row('Cooldown', lvOf(`${id}Cd` as OreLine), 'Wait before you can tap it again (never below 3s)', `${now.cooldown.toFixed(1)}s`, `${nCd.cooldown.toFixed(1)}s`)}
+          ${row(LUCK_INFO[id].name, lvOf(`${id}Luck` as OreLine), `Chance on ${LUCK_INFO[id].rolls}: ${LUCK_INFO[id].effect}`, `${(luckChance(id, lvOf(`${id}Luck` as OreLine)) * 100).toFixed(1)}%`, `${(luckChance(id, lvOf(`${id}Luck` as OreLine) + 1) * 100).toFixed(1)}%`)}
         </tbody>
       </table>
       <p class="hint">Values are for the shot as first bought in a level. You still buy it with Shards each level; every extra Shard upgrade during the level adds +1 to all three.</p>
