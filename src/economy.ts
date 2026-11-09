@@ -77,12 +77,13 @@ export const bombDmgMult = (n: number) => Math.pow(1.25, n);
 export const bombFalloff = (ring: number, rings: number) => Math.max(0, 1 - (ring - 1) / rings);
 
 export type SpId = 'unlockPoison' | 'slot3' | 'slot4' | 'headStart' | 'freeShot' | 'smartAim' | 'mastery';
-export interface SpInfo { id: SpId; name: string; desc: string; cost: (owned: number) => number; max: number; requires?: SpId }
+export interface SpInfo { id: SpId; name: string; desc: string; cost: (owned: number) => number; max: number; requires?: SpId; effect?: (owned: number) => string }
 export const SP_ITEMS: SpInfo[] = [
   { id: 'unlockPoison', name: 'Unlock Poison', desc: 'Adds Poison to the in-level shop.', cost: () => 2, max: 1 },
   { id: 'slot3', name: 'Third ability slot', desc: 'Buy up to 3 specialty shots per level.', cost: () => 3, max: 1 },
   { id: 'slot4', name: 'Fourth ability slot', desc: 'Buy up to 4 specialty shots per level.', cost: () => 6, max: 1, requires: 'slot3' },
-  { id: 'headStart', name: 'Head start', desc: 'Begin every level with enough Shards for a first upgrade.', cost: () => 2, max: 1 },
+  { id: 'headStart', name: 'Head start', desc: 'Begin every level with bonus Shards. Each upgrade adds more; the amount grows with the level number.', cost: n => Math.ceil(2 * Math.pow(1.4, n)), max: Infinity,
+    effect: n => `Level 1: ${headStartShards(n, 1)} → <b>${headStartShards(n + 1, 1)}</b> Shards · level 10: ${fmt(headStartShards(n, 10))} → <b>${fmt(headStartShards(n + 1, 10))}</b>` },
   { id: 'freeShot', name: 'Ready loadout', desc: 'Your first specialty shot each level is free.', cost: () => 4, max: 1 },
   { id: 'smartAim', name: 'Smart Aim', desc: 'When you are not aiming, the turret picks targets itself: generators, gold and cracked gems first. Toggle it during a level.', cost: () => 3, max: 1 },
   { id: 'mastery', name: 'Mastery', desc: '×1.05 damage to everything. Repeatable forever.', cost: n => Math.ceil(5 * Math.pow(1.3, n)), max: Infinity },
@@ -132,6 +133,9 @@ export function blasterStats(boosts: Record<BoostId, number>, p: Perm) {
     crit: critChance(lv(p, 'crit')),
   };
 }
+
+/** Bonus Shards at the start of a level from the Head start skill (n upgrades). */
+export const headStartShards = (n: number, L: number) => Math.round(50 * n * (levelBaseHp(L) / levelBaseHp(1)));
 
 export const shardGainMult = (p: Perm) => 1 + Math.min(1, lv(p, 'shardGain') * 0.05);
 export const oreGainMult = (p: Perm) => 1 + Math.min(1, lv(p, 'oreGain') * 0.05);

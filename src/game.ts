@@ -5,7 +5,7 @@ import { CHALLENGE_BIT, pickChallenge, type Challenge } from './challenge';
 import {
   BOOSTS, BOOST_BASE, CLEAR_TARGET, COLLAPSE_SECONDS, SHOTS, SHOT_LEVEL_BASE, SHOT_UNLOCK_BASE,
   abilitySlots, availableShots, blasterStats, inLevelCost, oreGainMult, shardGainMult, shotStats,
-  bombDmgMult, bombFalloff, bombRings, lv,
+  bombDmgMult, bombFalloff, bombRings, headStartShards, lv,
   type BoostId, type Perm, type ShotId,
 } from './economy';
 import * as sfx from './audio';
@@ -77,7 +77,7 @@ export class Game {
     this.level = generateLevel(L);
     this.challenge = pickChallenge(this.level);
     this.regenCells = this.level.cells.filter(c => c.regen);
-    if (perm.sp.headStart) this.shards = inLevelCost(BOOST_BASE.damage, 0, L);
+    this.shards = headStartShards(perm.sp.headStart ?? 0, L);
     this.freeShotAvailable = !!perm.sp.freeShot;
   }
 

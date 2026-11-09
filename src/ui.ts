@@ -1,7 +1,7 @@
 // DOM overlay: HUD, ability buttons, shop tray, pause, results and the permanent upgrade shop.
 import {
   BOOSTS, BOOST_INFO, ORE_LINES, SHOTS, SHOT_INFO, SP_ITEMS, CLEAR_TARGET,
-  abilitySlots, availableShots, fmt, oreCost, blasterStats,
+  abilitySlots, availableShots, fmt, oreCost, blasterStats, shotStats,
   type ShotId, type OreLine,
 } from './economy';
 import type { Game, LevelResult } from './game';
@@ -331,7 +331,9 @@ export class Ui {
           const n = save.perm.ore[l.id] ?? 0;
           const cost = oreCost(l, n);
           const can = save.ore >= cost;
-          const head = l.group !== group ? `<div class="grp">${(group = l.group)}</div>` : '';
+          const shot = SHOTS.find(id => SHOT_INFO[id].name === l.group);
+          const info = shot ? `<button class="info-btn" data-info="${shot}" aria-label="About ${l.group}">i</button>` : '';
+          const head = l.group !== group ? `<div class="grp">${(group = l.group)}${info}</div>` : '';
           return `${head}<div class="row"><div class="txt"><div class="nm">${l.name} <span class="lv">Lv ${n}</span></div><div class="fx">${l.effect(n)} → <b>${l.effect(n + 1)}</b></div></div>
             <button class="buy ${can ? '' : 'off'}" data-ore-buy="${l.id}" ${can ? '' : 'disabled'}><small>Upgrade</small><span><i class="ore-ic"></i>${fmt(cost)}</span></button></div>`;
         }).join('');
@@ -342,7 +344,7 @@ export class Ui {
           const blocked = it.requires && !save.perm.sp[it.requires];
           const cost = it.cost(owned);
           const can = !maxed && !blocked && save.sp >= cost;
-          return `<div class="row ${maxed ? 'owned' : ''}"><div class="txt"><div class="nm">${it.name} ${it.max === Infinity && owned ? `<span class="lv">×${owned}</span>` : ''}</div><div class="fx">${it.desc}${blocked ? ' <i>Needs the third slot first.</i>' : ''}</div></div>
+          return `<div class="row ${maxed ? 'owned' : ''}"><div class="txt"><div class="nm">${it.name} ${it.max === Infinity && owned ? `<span class="lv">×${owned}</span>` : ''}</div><div class="fx">${it.desc}${blocked ? ' <i>Needs the third slot first.</i>' : ''}${it.effect && !maxed ? `<br>${it.effect(owned)}` : ''}</div></div>
             ${maxed ? '<span class="owned-tag">Owned</span>' : `<button class="buy sp ${can ? '' : 'off'}" data-sp-buy="${it.id}" ${can ? '' : 'disabled'}><small>Unlock</small><span>✦ ${cost}</span></button>`}</div>`;
         }).join('');
       }
@@ -351,12 +353,52 @@ export class Ui {
     el.addEventListener('click', e => {
       const t = (e.target as HTMLElement).closest('button') as HTMLButtonElement | null;
       if (!t) return;
+      if (t.dataset.info) { this.showShotInfo(t.dataset.info as ShotId, save); return; }
       if (t.dataset.tab) { this.oreTab = t.dataset.tab as 'ore' | 'sp'; el.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('on', b === t)); renderList(); }
       if (t.dataset.oreBuy) { this.on.buyOre(t.dataset.oreBuy as OreLine); this.refreshWallet(el, save); renderList(); }
       if (t.dataset.spBuy) { this.on.buySp(t.dataset.spBuy); this.refreshWallet(el, save); renderList(); }
       if (t.dataset.play) this.on.play(+t.dataset.play);
       if (t.hasAttribute('data-title')) this.showTitle(save);
     });
+  }
+
+  /** Explains a specialty shot and what your permanent upgrades currently give it. */
+  private showShotInfo(id: ShotId, save: SaveData) {
+    const info = SHOT_INFO[id];
+    const p = save.perm;
+    const lvOf = (k: OreLine) => p.ore[k] ?? 0;
+    const now = shotStats(id, 1, p);
+    const withOre = (k: OreLine) => shotStats(id, 1, { ...p, ore: { ...p.ore, [k]: lvOf(k) + 1 } });
+    const nStr = withOre(`${id}Str` as OreLine), nDur = withOre(`${id}Dur` as OreLine), nCd = withOre(`${id}Cd` as OreLine);
+    const blurb: Record<ShotId, string> = {
+      multishot: 'Fires extra shots in a fan alongside every blaster shot. Great for chewing through wide walls.',
+      ricochet: 'Shots bounce off gems and bedrock instead of stopping, losing 25% damage per bounce. Use the laser sight to line up bank shots.',
+      piercing: 'Shots pass through gems, hitting each one, losing 20% damage per gem. Best down long lines of gems.',
+      poison: 'Gems you hit keep taking damage over time. Poison also stops regenerating gems from healing.',
+    };
+    const strWhat: Record<ShotId, string> = {
+      multishot: '+1 extra shot, then 1 more every 2 levels',
+      ricochet: '1 bounce, then 1 more every 1.5 levels',
+      piercing: 'Passes 1 gem, then 1 more every 1.5 levels',
+      poison: '50% of shot damage per second for 3s, +10% and +0.5s per level',
+    };
+    const row = (name: string, lv: number, what: string, cur: string, next: string) =>
+      `<tr><td><b>${name}</b> <span class="lv">Lv ${lv}</span><div class="fx">${what}</div></td><td>${cur}</td><td><b>${next}</b></td></tr>`;
+    const el = h(`<div class="modal"><div class="plate sheet info-sheet">
+      <div class="sheet-head"><span class="ric" style="--c:${info.color}">${info.icon}</span><h2>${info.name}</h2><button class="x" data-close>✕</button></div>
+      <p class="info-blurb">${blurb[id]}</p>
+      <table class="info-table">
+        <thead><tr><th>Upgrade</th><th>Now</th><th>Next level</th></tr></thead>
+        <tbody>
+          ${row('Strength', lvOf(`${id}Str` as OreLine), strWhat[id], detail(id, now), detail(id, nStr))}
+          ${row('Active time', lvOf(`${id}Dur` as OreLine), 'How long it stays on after you tap it (approaches 8s)', `${now.active.toFixed(1)}s`, `${nDur.active.toFixed(1)}s`)}
+          ${row('Cooldown', lvOf(`${id}Cd` as OreLine), 'Wait before you can tap it again (never below 3s)', `${now.cooldown.toFixed(1)}s`, `${nCd.cooldown.toFixed(1)}s`)}
+        </tbody>
+      </table>
+      <p class="hint">Values are for the shot as first bought in a level. You still buy it with Shards each level; every extra Shard upgrade during the level adds +1 to all three.</p>
+    </div></div>`);
+    el.addEventListener('click', e => { if (e.target === el || (e.target as HTMLElement).closest('[data-close]')) el.remove(); });
+    this.root.appendChild(el);
   }
 
   private refreshWallet(el: HTMLElement, save: SaveData) {
