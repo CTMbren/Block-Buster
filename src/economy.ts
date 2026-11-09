@@ -72,8 +72,8 @@ export const ORE_LINES: OreLineInfo[] = [
     { id: `${s}Cd` as OreLine, group: SHOT_INFO[s].name, name: 'Cooldown', base: 200, growth: 1.18, effect: (n: number) => `+${n}` },
     { id: `${s}Luck` as OreLine, group: SHOT_INFO[s].name, name: LUCK_INFO[s].name, base: 300, growth: 1.18, effect: (n: number) => `${(luckChance(s, n) * 100).toFixed(1)}% chance` },
   ]),
-  { id: 'bombRange', group: 'Explosives', name: 'Blast radius', base: 300, growth: 1.4, effect: n => `${bombRings(n)} ring${bombRings(n) > 1 ? 's' : ''}` },
-  { id: 'bombDmg', group: 'Explosives', name: 'Blast damage', base: 200, growth: 1.22, effect: n => `×${bombDmgMult(n).toFixed(2)}` },
+  { id: 'bombRange', group: 'Explosives', name: 'Blast radius', base: 300, growth: 1.4, effect: n => `reach ${blastReach(n).toFixed(1)} hexes` },
+  { id: 'bombDmg', group: 'Explosives', name: 'Blast damage', base: 200, growth: 1.22, effect: n => `core ${Math.round(blastCore(n) * 100)}% · ring 2 ${Math.round(blastCore(n) * blastFalloff(2, 2.5, n) * 100)}%` },
   { id: 'shardGain', group: 'Economy', name: 'Shard gain', base: 320, growth: 1.3, effect: n => `+${pct(Math.min(1, n * 0.05))}` },
   { id: 'oreGain', group: 'Economy', name: 'Ore gain', base: 320, growth: 1.3, effect: n => `+${pct(Math.min(1, n * 0.05))}` },
 ];
@@ -81,12 +81,18 @@ export const ORE_LINES: OreLineInfo[] = [
 export const oreCost = (line: OreLineInfo, n: number) => Math.ceil(line.base * Math.pow(line.growth, n));
 export const blasterPermMult = (n: number) => Math.pow(1.09, n);
 export const critChance = (n: number) => Math.min(0.5, n * 0.02);
-/** Explosive gems: how many rings of hexes the blast reaches, and its damage multiplier. */
-export const bombRings = (n: number) => 1 + n;
-export const bombDmgMult = (n: number) => Math.pow(1.25, n);
-/** Damage falls off with distance: full on ring 1, down to 1/rings on the outermost ring. */
-export const bombFalloff = (ring: number, rings: number) => Math.max(0, 1 - (ring - 1) / rings);
-
+/**
+ * Explosive gems.
+ * Reach grows slowly: 1.5 hexes at level 0, +0.4 per Blast radius level (ring 2 at level 2, ring 3 at level 4...).
+ * Damage is a share of the exploding gem's own max HP, so a level-0 bomb only breaks weak or damaged neighbours.
+ * Falloff: damage on ring d = core * (1 - (d-1)/reach)^k. Blast damage raises the core a little and lowers k,
+ * so each level pushes noticeably more damage out to the outer rings.
+ */
+export const blastReach = (n: number) => 1.5 + 0.4 * n;
+export const blastCore = (n: number) => 0.6 * Math.pow(1.1, n);
+export const blastShape = (n: number) => 2.5 / (1 + 0.2 * n);
+export const blastFalloff = (ring: number, reach: number, nDmg: number) =>
+  ring > reach ? 0 : Math.pow(Math.max(0, 1 - (ring - 1) / reach), blastShape(nDmg));
 export type SpId = 'unlockPoison' | 'slot3' | 'slot4' | 'headStart' | 'freeShot' | 'smartAim' | 'mastery';
 export interface SpInfo { id: SpId; name: string; desc: string; cost: (owned: number) => number; max: number; requires?: SpId; effect?: (owned: number) => string }
 export const SP_ITEMS: SpInfo[] = [
@@ -168,7 +174,7 @@ export const relicCount = (p: Perm) => Math.floor((p.gemsFound ?? 0) / GEMS_PER_
 export const relicDamageMult = (p: Perm) => { const n = relicCount(p); return n >= 5 ? 1.05 + 0.02 * (n - 5) : 1; };
 
 /** Par time for the Par star on region levels, in seconds. */
-export const parSeconds = (L: number) => Math.round(7.5 * 60 + Math.min(L - 6, 14) * 6);
+export const parSeconds = (L: number) => Math.round(11 * 60 + Math.min(L - 6, 14) * 6);
 
 // ---------- formatting ----------
 

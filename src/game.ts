@@ -1,12 +1,12 @@
 // In-level simulation: movement, shooting, damage, rewards and level end.
 import { HEX_INNER, HEX_W, DIRS, pixelToHex } from './hex';
-import { HP_SCALE, Kind, LINK_WINDOW, generateLevel, type Cell, type Entity, type Level, type Region } from './level';
+import { Kind, LINK_WINDOW, generateLevel, type Cell, type Entity, type Level, type Region } from './level';
 import type { Checkpoint } from './save';
 import { CHALLENGE_BIT, pickChallenge, type Challenge } from './challenge';
 import {
   BOOSTS, BOOST_BASE, CLEAR_TARGET, COLLAPSE_SECONDS, SHOTS, SHOT_LEVEL_BASE, SHOT_UNLOCK_BASE,
   abilitySlots, availableShots, blasterStats, inLevelCost, oreGainMult, shardGainMult, shotStats,
-  bombDmgMult, bombFalloff, bombRings, headStartShards, lv, LUCK_INFO, luckChance, parSeconds,
+  blastCore, blastFalloff, blastReach, headStartShards, lv, LUCK_INFO, luckChance, parSeconds,
   type BoostId, type Perm, type ShotId,
 } from './economy';
 import * as sfx from './audio';
@@ -483,7 +483,7 @@ export class Game {
     this.gemsBroken++;
     if (c.region >= 0) this.regionGemBroken(c.region);
     this.bumpCombo();
-    const sh = (c.maxHp / HP_SCALE) * shardGainMult(this.perm);
+    const sh = (c.maxHp / (this.level.hpUnit / this.level.base)) * shardGainMult(this.perm);
     this.shards += sh; this.shardsCollected += sh;
     this.shatter(c, 9);
     this.shake = Math.min(6, this.shake + 1.2);
@@ -518,13 +518,15 @@ export class Game {
     }
   }
 
-  /** Explosive gem: damage every hex within the blast radius, weaker further out. Walls block nothing. */
+  /** Explosive gem: damage every hex within reach, strongest next to the bomb and fading outward. */
   private explode(c: Cell, special: boolean) {
-    const rings = bombRings(lv(this.perm, 'bombRange'));
-    const dmg = this.level.hpUnit * 5 * bombDmgMult(lv(this.perm, 'bombDmg'));
-    this.blasts.push({ x: c.x, y: c.y, r: rings * HEX_W, t: 0 });
+    const nR = lv(this.perm, 'bombRange'), nD = lv(this.perm, 'bombDmg');
+    const reach = blastReach(nR), rings = Math.floor(reach);
+    const dmg = c.maxHp * blastCore(nD);
+    this.blasts.push({ x: c.x, y: c.y, r: reach * HEX_W, t: 0 });
     for (let ring = 1; ring <= rings; ring++) {
-      const f = bombFalloff(ring, rings);
+      const f = blastFalloff(ring, reach, nD);
+      if (f <= 0.01) break;
       // walk the hex ring at distance `ring`
       let q = c.q + DIRS[4][0] * ring, r = c.r + DIRS[4][1] * ring;
       for (let side = 0; side < 6; side++) for (let k = 0; k < ring; k++) {
@@ -671,7 +673,7 @@ export class Game {
       if (g.kind !== Kind.Gem) continue;
       if (seal.some(s => Math.hypot(s.x - g.x, s.y - g.y) < HEX_W * 2.6)) this.damageCell(g, g.maxHp * 0.5, false);
     }
-    const burst = next.gems.reduce((a, g) => a + g.maxHp, 0) / HP_SCALE * 0.1 * shardGainMult(this.perm);
+    const burst = next.gems.reduce((a, g) => a + g.maxHp, 0) / (this.level.hpUnit / this.level.base) * 0.1 * shardGainMult(this.perm);
     this.shards += burst; this.shardsCollected += burst;
     for (const id of SHOTS) if (this.shots[id].lvl > 0 && this.shots[id].active <= 0) this.shots[id].cd = 0;
     this.shake = 14; this.slowMo = 0.35;

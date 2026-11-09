@@ -5,7 +5,7 @@ import { DIRS, HEX_R, HEX_W, hexDist, hexRound } from './hex';
 import { Rng, hash2 } from './rng';
 import { generatorCount, levelBaseHp } from './economy';
 import {
-  HIDDEN_GEM_LEVEL, HP_SCALE, Kind, generateDiscLevel, makeCell,
+  HIDDEN_GEM_LEVEL, hpScale, Kind, generateDiscLevel, makeCell,
   type Cell, type Entity, type Level, type Region,
 } from './level';
 
@@ -299,12 +299,12 @@ export function generateRegionLevel(L: number): Level {
     // each room is ~3.2x tougher than the one before, to match how much stronger you get as you buy upgrades
     const rg = regions[c.region];
     const roomMult = !rg ? 1 : rg.vault ? 2.5 : Math.pow(3.2, main.indexOf(rg));
-    let hp = base * HP_SCALE * (0.6 + 1.6 * depth(c)) * roomMult * (0.7 + 0.6 * noise);
+    let hp = base * hpScale(L) * (0.6 + 1.6 * depth(c)) * roomMult * (0.7 + 0.6 * noise);
     if (c.armor) hp *= 1.8;
     if (c.ore) hp *= c.oreAmt > 2 ? 1.8 : 1.4;
     if (c.geode) hp *= 2.2;
     if (c.gold) hp *= 2.5;
-    if (c.hidden) hp = base * HP_SCALE * 4;
+    if (c.hidden) hp = base * hpScale(L) * 4;
     c.hp = c.maxHp = hp;
   }
   const ref = generateDiscLevel(L).cells.reduce((a, c) => a + (c.kind === Kind.Gem ? c.maxHp : 0), 0);
@@ -332,8 +332,8 @@ export function generateRegionLevel(L: number): Level {
     gemTotal: cells.filter(c => c.kind === Kind.Gem && !c.hidden).length,
     boomTotal: cells.filter(c => c.kind === Kind.Gem && c.boom).length,
     shell,
-    armorValue: base * HP_SCALE * 0.45,
-    hpUnit: base * HP_SCALE,
+    armorValue: base * hpScale(L) * 0.45,
+    hpUnit: base * hpScale(L),
     spawn: { x: spawnCell.x, y: spawnCell.y },
     regions,
     vault: regions[vaultIdx],

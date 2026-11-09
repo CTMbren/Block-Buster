@@ -5,7 +5,9 @@ import { generateRegionLevel } from './regions';
 import { generatorCount, levelBaseHp, levelRadius } from './economy';
 
 /** Gems take this many times more hits than the base HP suggests; Shards pay back 1/HP_SCALE per HP. */
-export const HP_SCALE = 1.6;
+export const HP_SCALE = 3.0;
+/** Levels 1-2 are lighter while you learn: 60% and 80% of full toughness. */
+export const hpScale = (L: number) => HP_SCALE * Math.min(1, 0.6 + 0.2 * (L - 1));
 
 export enum Kind { Floor = 1, Gem = 2, Bedrock = 3, Keystone = 4, Generator = 5, Seal = 6 }
 
@@ -256,7 +258,7 @@ export function generateDiscLevel(L: number): Level {
     const ns = nbrs(c);
     const noise = (raw.get(c)! * 2 + ns.reduce((a, n) => a + raw.get(n)!, 0)) / (2 + ns.length);
     const d = hexDist(c.q, c.r) / N;
-    let hp = base * HP_SCALE * (0.6 + 2.6 * d) * (0.7 + 0.6 * noise);
+    let hp = base * hpScale(L) * (0.6 + 2.6 * d) * (0.7 + 0.6 * noise);
     if (c.armor) hp *= 1.8;
     if (c.ore) hp *= c.oreAmt > 2 ? 1.8 : 1.4;
     if (c.geode) hp *= 2.2;
@@ -274,8 +276,8 @@ export function generateDiscLevel(L: number): Level {
     gemTotal: cells.filter(c => c.kind === Kind.Gem).length,
     boomTotal: cells.filter(c => c.kind === Kind.Gem && c.boom).length,
     shell,
-    armorValue: base * HP_SCALE * 0.45,
-    hpUnit: base * HP_SCALE,
+    armorValue: base * hpScale(L) * 0.45,
+    hpUnit: base * hpScale(L),
     spawn: { x: 0, y: 0 }, regions: [], vault: null, hiddenGem: null,
   };
 }
