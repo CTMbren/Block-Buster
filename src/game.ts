@@ -5,6 +5,7 @@ import { CHALLENGE_BIT, pickChallenge, type Challenge } from './challenge';
 import {
   BOOSTS, BOOST_BASE, CLEAR_TARGET, COLLAPSE_SECONDS, SHOTS, SHOT_LEVEL_BASE, SHOT_UNLOCK_BASE,
   abilitySlots, availableShots, blasterStats, inLevelCost, oreGainMult, shardGainMult, shotStats,
+  bombDmgMult, bombFalloff, bombRings, lv,
   type BoostId, type Perm, type ShotId,
 } from './economy';
 import * as sfx from './audio';
@@ -47,6 +48,7 @@ export class Game {
   freeShotAvailable: boolean;
   projectiles: Projectile[] = [];
   particles: Particle[] = [];
+  blasts: { x: number; y: number; r: number; t: number }[] = [];
   floaters: Floater[] = [];
   poisoned = new Set<Cell>();
   gemsBroken = 0;
@@ -421,9 +423,23 @@ export class Game {
       sfx.sfxBoom();
       this.shake = Math.min(10, this.shake + 5);
       this.spark(c.x, c.y, '#ff9a3a', 18);
-      for (const [a, b] of DIRS) {
-        const n = this.cellAt(c.q + a, c.r + b);
-        if (n && n.kind !== Kind.Bedrock) this.damageCell(n, this.level.hpUnit * 5, special);
+      this.explode(c, special);
+    }
+  }
+
+  /** Explosive gem: damage every hex within the blast radius, weaker further out. Walls block nothing. */
+  private explode(c: Cell, special: boolean) {
+    const rings = bombRings(lv(this.perm, 'bombRange'));
+    const dmg = this.level.hpUnit * 5 * bombDmgMult(lv(this.perm, 'bombDmg'));
+    this.blasts.push({ x: c.x, y: c.y, r: rings * HEX_W, t: 0 });
+    for (let ring = 1; ring <= rings; ring++) {
+      const f = bombFalloff(ring, rings);
+      // walk the hex ring at distance `ring`
+      let q = c.q + DIRS[4][0] * ring, r = c.r + DIRS[4][1] * ring;
+      for (let side = 0; side < 6; side++) for (let k = 0; k < ring; k++) {
+        const n = this.cellAt(q, r);
+        if (n && n.kind !== Kind.Bedrock && n.kind !== Kind.Floor) this.damageCell(n, dmg * f, special);
+        q += DIRS[side][0]; r += DIRS[side][1];
       }
     }
   }
@@ -529,6 +545,8 @@ export class Game {
     if (this.floaters.length > 40) this.floaters.shift();
   }
   private updateParticles(dt: number) {
+    for (const b of this.blasts) b.t += dt;
+    this.blasts = this.blasts.filter(b => b.t < 0.45);
     for (const p of this.particles) {
       p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 1 - 3 * dt; p.vy *= 1 - 3 * dt;
       p.rot += p.vr * dt; p.life -= dt;

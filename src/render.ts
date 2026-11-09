@@ -307,6 +307,7 @@ export class Renderer {
     this.drawProjectiles(game);
     this.drawPlayer(game);
     this.drawParticles(game);
+    this.drawBlasts(game);
 
     // lantern lighting: everything far from the rig fades into the dark
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -540,6 +541,25 @@ export class Renderer {
     d.addColorStop(0, '#fff3c8'); d.addColorStop(0.4, '#ffb35a'); d.addColorStop(1, '#8a4a12');
     ctx.fillStyle = d; ctx.fill();
     ctx.restore();
+  }
+
+  /** Expanding shockwave out to the blast radius. */
+  private drawBlasts(game: Game) {
+    const ctx = this.ctx;
+    for (const b of game.blasts) {
+      const k = b.t / 0.45, e = 1 - Math.pow(1 - k, 3);
+      const r = Math.max(4, b.r * e + HEX_W * 0.4);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
+      g.addColorStop(0, `rgba(255,240,190,${0.5 * (1 - k)})`);
+      g.addColorStop(0.6, `rgba(255,140,50,${0.25 * (1 - k)})`);
+      g.addColorStop(1, 'rgba(255,90,20,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 7); ctx.fill();
+      ctx.strokeStyle = `rgba(255,200,120,${0.85 * (1 - k)})`; ctx.lineWidth = 3 * (1 - k) + 1;
+      ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 7); ctx.stroke();
+      ctx.restore();
+    }
   }
 
   private drawParticles(game: Game) {

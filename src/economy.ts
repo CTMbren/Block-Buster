@@ -44,7 +44,7 @@ export const SHOT_LEVEL_BASE = 70;
 // ---------- permanent (Ore and skill points) ----------
 
 export type OreLine =
-  | 'damage' | 'fireRate' | 'speed' | 'crit' | 'shardGain' | 'oreGain'
+  | 'damage' | 'fireRate' | 'speed' | 'crit' | 'shardGain' | 'oreGain' | 'bombRange' | 'bombDmg'
   | `${ShotId}Str` | `${ShotId}Dur` | `${ShotId}Cd`;
 
 export interface OreLineInfo { id: OreLine; group: string; name: string; base: number; growth: number; effect: (n: number) => string }
@@ -61,6 +61,8 @@ export const ORE_LINES: OreLineInfo[] = [
     { id: `${s}Dur` as OreLine, group: SHOT_INFO[s].name, name: 'Active time', base: 200, growth: 1.18, effect: (n: number) => `+${n}` },
     { id: `${s}Cd` as OreLine, group: SHOT_INFO[s].name, name: 'Cooldown', base: 200, growth: 1.18, effect: (n: number) => `+${n}` },
   ]),
+  { id: 'bombRange', group: 'Explosives', name: 'Blast radius', base: 300, growth: 1.4, effect: n => `${bombRings(n)} ring${bombRings(n) > 1 ? 's' : ''}` },
+  { id: 'bombDmg', group: 'Explosives', name: 'Blast damage', base: 200, growth: 1.22, effect: n => `×${bombDmgMult(n).toFixed(2)}` },
   { id: 'shardGain', group: 'Economy', name: 'Shard gain', base: 320, growth: 1.3, effect: n => `+${pct(Math.min(1, n * 0.05))}` },
   { id: 'oreGain', group: 'Economy', name: 'Ore gain', base: 320, growth: 1.3, effect: n => `+${pct(Math.min(1, n * 0.05))}` },
 ];
@@ -68,6 +70,11 @@ export const ORE_LINES: OreLineInfo[] = [
 export const oreCost = (line: OreLineInfo, n: number) => Math.ceil(line.base * Math.pow(line.growth, n));
 export const blasterPermMult = (n: number) => Math.pow(1.09, n);
 export const critChance = (n: number) => Math.min(0.5, n * 0.02);
+/** Explosive gems: how many rings of hexes the blast reaches, and its damage multiplier. */
+export const bombRings = (n: number) => 1 + n;
+export const bombDmgMult = (n: number) => Math.pow(1.25, n);
+/** Damage falls off with distance: full on ring 1, down to 1/rings on the outermost ring. */
+export const bombFalloff = (ring: number, rings: number) => Math.max(0, 1 - (ring - 1) / rings);
 
 export type SpId = 'unlockPoison' | 'slot3' | 'slot4' | 'headStart' | 'freeShot' | 'smartAim' | 'mastery';
 export interface SpInfo { id: SpId; name: string; desc: string; cost: (owned: number) => number; max: number; requires?: SpId }
