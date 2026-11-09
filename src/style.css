@@ -120,7 +120,8 @@ i.shard-ic, i.ore-ic { width: 11px; height: 13px; margin-right: 4px; }
 @keyframes ready { 50% { box-shadow: 0 0 16px var(--c), 0 4px 12px rgba(0, 0, 0, .6); } }
 
 /* ---------- sheets (shop tray, modals) ---------- */
-.tray { position: absolute; left: 0; right: 0; bottom: 0; max-height: 64%; display: flex; flex-direction: column; padding: 0 8px calc(8px + var(--safe-b)); pointer-events: auto; }
+.tray { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; padding: 0 8px calc(8px + var(--safe-b)); pointer-events: auto; background: rgba(10, 6, 4, .35); }
+.tray .sheet { max-height: 64%; }
 .tray[hidden], .collapse[hidden] { display: none; }
 .sheet { padding: 14px 14px 16px; overflow-y: auto; border-radius: 16px; max-width: 520px; width: 100%; margin: 0 auto; }
 .tray .sheet { border-radius: 16px 16px 12px 12px; }

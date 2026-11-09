@@ -193,6 +193,7 @@ export class Ui {
     this.lastShop = html;
     this.shopEl.innerHTML = html;
     this.shopEl.onclick = e => {
+      if (e.target === this.shopEl) { this.toggleShop(game, false); return; } // tapped outside the menu
       const t = (e.target as HTMLElement).closest('button') as HTMLButtonElement | null;
       if (!t) return;
       if (t.hasAttribute('data-close')) { this.toggleShop(game, false); return; }
