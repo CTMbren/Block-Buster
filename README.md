@@ -12,7 +12,11 @@ A top-down hex-grid shooter for the browser, built mobile-first. Drill outward t
 - Every level is generated from its number, so there's no limit and any level replays exactly.
 - **Objective:** break the 7-hex Keystone. From level 3 it sits inside a force field powered by generators elsewhere on the map; follow the beams and break them first.
 - **Stars:** Keystone (2 skill points), clear 70% of gems (1), all 3 golden gems (1). Each star pays once per level.
-- Breaking the Keystone opens an exit; walk into it, or the mine collapses after 90 seconds.
+- **Bonus challenge:** each level rolls one (a chain, Ore gems mined, a Piercing triple, a speed run…) worth +1 skill point once.
+- From level 6 some Keystones get an armored shell; from level 10 generators come in linked pairs that must break within 8 seconds of each other.
+- Special gems: armored, explosive, golden, Ore veins and deposits, geodes (big Ore), and regenerating gems from level 9.
+- Breaking the Keystone opens an exit; walk into it, or the mine collapses after 90 seconds. Ore gems pay double during the collapse.
+- Installs to the home screen and works offline.
 
 ## Currencies
 

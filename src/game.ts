@@ -1,6 +1,7 @@
 // In-level simulation: movement, shooting, damage, rewards and level end.
 import { HEX_INNER, HEX_W, DIRS, pixelToHex } from './hex';
-import { HP_SCALE, Kind, generateLevel, type Cell, type Entity, type Level } from './level';
+import { HP_SCALE, Kind, LINK_WINDOW, generateLevel, type Cell, type Entity, type Level } from './level';
+import { CHALLENGE_BIT, pickChallenge, type Challenge } from './challenge';
 import {
   BOOSTS, BOOST_BASE, CLEAR_TARGET, COLLAPSE_SECONDS, SHOTS, SHOT_LEVEL_BASE, SHOT_UNLOCK_BASE,
   abilitySlots, availableShots, blasterStats, inLevelCost, oreGainMult, shardGainMult, shotStats,
@@ -13,6 +14,7 @@ export interface Projectile {
   dmg: number; dist: number; pierce: number; bounce: number;
   poison: { frac: number; time: number } | null;
   special: boolean; crit: boolean; last: number; color: string;
+  piercing: boolean; bounced: boolean; breaks: number;
 }
 export interface Particle { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number; rot: number; vr: number; kind: 0 | 1 }
 export interface Floater { x: number; y: number; text: string; life: number; color: string; big: boolean }
@@ -23,6 +25,7 @@ export interface LevelResult {
   L: number; reason: EndReason; stars: number; time: number;
   clearPct: number; golds: number; goldTotal: number; generators: number;
   ore: number; salvage: number; shardsCollected: number;
+  challenge: Challenge;
 }
 
 const PLAYER_R = 11;
@@ -62,10 +65,16 @@ export class Game {
   autoAiming = false;
   autoTarget: Cell | null = null;
   private retargetT = 0;
+  challenge: Challenge;
+  purchases = 0;
+  private curProj: Projectile | null = null;
+  private regenCells: Cell[];
 
   constructor(L: number, public perm: Perm) {
     this.L = L;
     this.level = generateLevel(L);
+    this.challenge = pickChallenge(this.level);
+    this.regenCells = this.level.cells.filter(c => c.regen);
     if (perm.sp.headStart) this.shards = inLevelCost(BOOST_BASE.damage, 0, L);
     this.freeShotAvailable = !!perm.sp.freeShot;
   }
@@ -92,6 +101,7 @@ export class Game {
     const c = this.boostCost(id);
     if (this.shards < c) return false;
     this.shards -= c; this.boosts[id]++;
+    this.purchases++; this.trackThrifty();
     sfx.sfxBuy();
     return true;
   }
@@ -100,6 +110,7 @@ export class Game {
     const c = this.shotCost(id);
     if (this.shots[id].lvl === 0 && c === 0) this.freeShotAvailable = false;
     this.shards -= c; this.shots[id].lvl++;
+    this.purchases++; this.trackThrifty();
     sfx.sfxBuy();
     return true;
   }
@@ -155,6 +166,8 @@ export class Game {
 
     this.updateProjectiles(dt);
     this.updatePoison(dt);
+    this.updateRegen(dt);
+    this.updateLinks(dt);
 
     if (this.comboT > 0) { this.comboT -= dt; if (this.comboT <= 0) this.combo = 0; }
     for (const c of this.level.cells) if (c.flash > 0) c.flash = Math.max(0, c.flash - dt * 6);
@@ -263,7 +276,7 @@ export class Game {
         vx: Math.cos(a) * b.speed, vy: Math.sin(a) * b.speed,
         dmg: b.damage * (crit ? 2 : 1), dist: b.range * HEX_W, pierce: pier, bounce,
         poison: pz ? { frac: pz.poisonFrac, time: pz.poisonTime } : null,
-        special, crit, last: -1, color,
+        special, crit, last: -1, color, piercing: pier > 0, bounced: false, breaks: 0,
       });
     }
   }
@@ -299,7 +312,9 @@ export class Game {
       if (!shieldedKeystone) this.spark(p.x, p.y, '#8a8090', 2);
       return false;
     }
+    this.curProj = p;
     this.damageCell(c, p.dmg, p.special, p.crit);
+    this.curProj = null;
     if (p.poison && c.kind !== Kind.Floor) {
       c.poisonDps = Math.max(c.poisonDps, p.dmg * p.poison.frac);
       c.poisonT = Math.max(c.poisonT, p.poison.time);
@@ -322,12 +337,13 @@ export class Game {
     if (dot < 0) { p.vx -= 2 * dot * nx; p.vy -= 2 * dot * ny; }
     p.x = c.x + nx * (HEX_INNER + 1.5); p.y = c.y + ny * (HEX_INNER + 1.5);
     p.last = -1;
+    p.bounced = true;
   }
 
   damageCell(c: Cell, dmg: number, special: boolean, crit = false) {
     if (c.kind === Kind.Gem) {
       const d = c.armor ? Math.max(dmg * 0.15, dmg - this.level.armorValue) : dmg;
-      c.hp -= d; c.flash = 1;
+      c.hp -= d; c.flash = 1; c.idleT = 0;
       if (c.hp <= 0) this.breakGem(c, special);
       else sfx.sfxHit(Math.min(6, Math.ceil(c.hp / this.level.hpUnit)));
       if (crit && Math.random() < 0.25) this.floater(c.x, c.y - 10, 'crit', '#ffd27c');
@@ -345,7 +361,24 @@ export class Game {
   private bumpCombo() {
     this.combo = this.comboT > 0 ? this.combo + 1 : 1;
     this.comboT = 0.6;
+    if (this.challenge.id === 'chain') this.progress(Math.max(this.challenge.progress, this.combo));
   }
+
+  // ---------------- bonus challenge ----------------
+  private progress(v: number) {
+    const ch = this.challenge;
+    if (ch.done) return;
+    ch.progress = v;
+    if (ch.id !== 'thrifty' && ch.id !== 'speed' && v >= ch.target) this.completeChallenge();
+  }
+  private completeChallenge() {
+    const ch = this.challenge;
+    if (ch.done) return;
+    ch.done = true;
+    this.floater(this.player.x, this.player.y - 40, 'BONUS COMPLETE', '#b9a2ff', true);
+    sfx.sfxGold();
+  }
+  private trackThrifty() { if (this.challenge.id === 'thrifty') this.challenge.progress = this.purchases; }
   private addOre(amount: number, special: boolean, x: number, y: number) {
     const v = amount * oreGainMult(this.perm) * (special ? 1.5 : 1) * this.comboMult();
     this.oreEarned += v;
@@ -370,8 +403,21 @@ export class Game {
       this.floater(c.x, c.y, `GOLD ${this.goldsBroken}/${this.level.goldTotal}`, '#ffe27a', true);
       sfx.sfxGold();
     }
-    if (c.ore) { this.addOre(this.level.base * 1.5, special, c.x, c.y); sfx.sfxOre(); }
+    if (c.oreAmt > 0) {
+      // Ore veins pay double while the mine is collapsing.
+      const surge = this.gateOpen ? 2 : 1;
+      this.addOre(this.level.base * c.oreAmt * surge, special, c.x, c.y);
+      if (c.geode) { this.floater(c.x, c.y - 30, 'GEODE', '#e9c6ff', true); sfx.sfxGold(); } else sfx.sfxOre();
+      if (this.challenge.id === 'oreGems') this.progress(this.challenge.progress + 1);
+    }
+    const proj = this.curProj;
+    if (proj) {
+      proj.breaks++;
+      if (this.challenge.id === 'pierce' && proj.piercing) this.progress(Math.max(this.challenge.progress, proj.breaks));
+      if (this.challenge.id === 'bounce' && proj.bounced) this.progress(this.challenge.progress + 1);
+    }
     if (c.boom) {
+      if (this.challenge.id === 'boom') this.progress(this.challenge.progress + 1);
       sfx.sfxBoom();
       this.shake = Math.min(10, this.shake + 5);
       this.spark(c.x, c.y, '#ff9a3a', 18);
@@ -388,11 +434,49 @@ export class Game {
     c.kind = Kind.Floor;
     this.shatter(c, 22);
     this.shake = 10;
-    const sh = this.level.base * 30 * shardGainMult(this.perm);
-    this.shards += sh; this.shardsCollected += sh;
-    this.addOre(this.level.base * 8, special, c.x, c.y);
-    this.floater(c.x, c.y, this.shielded ? `Generator down · ${this.generatorsLeft} left` : 'Force field down!', '#7fe6ff', true);
+    if (!e.paid) {
+      e.paid = true;
+      const sh = this.level.base * 30 * shardGainMult(this.perm);
+      this.shards += sh; this.shardsCollected += sh;
+      this.addOre(this.level.base * 8, special, c.x, c.y);
+    }
     sfx.sfxGenerator();
+    if (e.link && !e.link.broken) {
+      e.relinkT = LINK_WINDOW;
+      this.floater(c.x, c.y, `Break its twin within ${LINK_WINDOW}s!`, '#ff9ae6', true);
+      return;
+    }
+    if (e.link) e.link.relinkT = 0;
+    this.floater(c.x, c.y, this.shielded ? `Generator down · ${this.generatorsLeft} left` : 'Force field down!', '#7fe6ff', true);
+  }
+
+  /** A linked generator re-forms if its twin isn't broken in time. */
+  private updateLinks(dt: number) {
+    for (const g of this.level.generators) {
+      if (!g.relinkT || g.relinkT <= 0) continue;
+      g.relinkT -= dt;
+      if (g.link?.broken) { g.relinkT = 0; continue; }
+      if (g.relinkT <= 0) {
+        g.relinkT = 0;
+        g.broken = false;
+        g.hp = g.maxHp * 0.4; // re-forms weakened, so softening both twins first is the way through
+        const c = g.cells[0];
+        c.kind = Kind.Generator; c.hp = g.hp; c.flash = 1;
+        this.spark(c.x, c.y, '#ff9ae6', 16);
+        this.floater(c.x, c.y, 'Generator re-formed', '#ff9ae6', true);
+        sfx.sfxFizzle();
+      }
+    }
+  }
+
+  /** Regenerating gems heal after 2s untouched, unless poisoned. */
+  private updateRegen(dt: number) {
+    for (const c of this.regenCells) {
+      if (c.kind !== Kind.Gem || c.hp >= c.maxHp) continue;
+      c.idleT += dt;
+      if (c.idleT < 2 || c.poisonT > 0) continue;
+      c.hp = Math.min(c.maxHp, c.hp + c.maxHp * 0.2 * dt);
+    }
   }
 
   private breakKeystone(e: Entity, special: boolean) {
@@ -403,6 +487,9 @@ export class Game {
     this.addOre(this.level.base * 30, special, e.x, e.y);
     this.gateOpen = true;
     this.collapseT = COLLAPSE_SECONDS;
+    const ch = this.challenge;
+    if (ch.id === 'speed') { ch.progress = Math.round(this.time); if (this.time <= ch.target) this.completeChallenge(); }
+    if (ch.id === 'thrifty' && this.purchases <= ch.target) this.completeChallenge();
     this.floater(e.x, e.y - 30, 'KEYSTONE BROKEN', '#ffe9a8', true);
     sfx.sfxKeystone();
   }
@@ -459,12 +546,14 @@ export class Game {
     if (lv.keystone.broken) stars |= 1;
     if (this.clearPct >= CLEAR_TARGET) stars |= 2;
     if (this.goldsBroken >= lv.goldTotal) stars |= 4;
+    if (this.challenge.done) stars |= CHALLENGE_BIT;
     if (reason === 'abandon') stars = 0;
     const salvage = this.shardsCollected * 0.1 * oreGainMult(this.perm);
     this.result = {
       L: this.L, reason, stars, time: this.time, clearPct: this.clearPct,
       golds: this.goldsBroken, goldTotal: lv.goldTotal, generators: lv.generators.length,
       ore: this.oreEarned + salvage, salvage, shardsCollected: this.shardsCollected,
+      challenge: this.challenge,
     };
   }
 }

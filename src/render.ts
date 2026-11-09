@@ -1,6 +1,6 @@
 // Canvas renderer in the "crystal mine" style: faceted gems in dark stone, lit by the rig's lantern.
 import { HEX_R, HEX_W, hexCorners, hexPath } from './hex';
-import { Kind, type Cell } from './level';
+import { Kind, LINK_WINDOW, type Cell } from './level';
 import { gemTier, type Game } from './game';
 import type { Input, Stick } from './input';
 
@@ -263,6 +263,24 @@ export class Renderer {
         ctx.strokeStyle = `rgba(255,226,122,${0.15 + 0.2 * pulse})`; ctx.lineWidth = 8; ctx.stroke();
         this.star(c.x, c.y, 5.5, '#fff0b0');
       }
+      if (c.kind === Kind.Gem && (c.geode || c.oreAmt > 2 || (c.ore && game.gateOpen))) {
+        // geodes and deposits shimmer; during the collapse every Ore gem glows (double Ore)
+        const hue = (this.t * 90 + c.shade * 360) % 360;
+        const a = c.geode ? 0.55 : game.gateOpen ? 0.5 + 0.3 * pulse : 0.3;
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        ctx.beginPath(); hexPath(ctx, c.x, c.y, HEX_R * (c.geode ? 0.62 : 0.5));
+        ctx.fillStyle = `hsla(${hue} 90% 70% / ${a * 0.35})`; ctx.fill();
+        ctx.strokeStyle = `hsla(${hue} 90% 75% / ${a})`; ctx.lineWidth = c.geode ? 2.4 : 1.4; ctx.stroke();
+        ctx.restore();
+        if (c.geode) { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(c.x + 4, c.y - 5, 1.6 + pulse, 0, 7); ctx.fill(); }
+      }
+      if (c.kind === Kind.Gem && c.regen) {
+        const healing = c.hp < c.maxHp && c.idleT >= 2 && c.poisonT <= 0;
+        ctx.strokeStyle = `rgba(150,255,170,${healing ? 0.5 + 0.4 * pulse : 0.35})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(c.x - 5, c.y); ctx.lineTo(c.x + 5, c.y); ctx.moveTo(c.x, c.y - 5); ctx.lineTo(c.x, c.y + 5); ctx.stroke();
+        if (healing) { ctx.beginPath(); hexPath(ctx, c.x, c.y, HEX_R * 0.8); ctx.stroke(); }
+      }
       if (c.kind === Kind.Gem && c.boom) {
         const r = 6 + 3 * pulse;
         const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, r * 1.6);
@@ -416,6 +434,34 @@ export class Renderer {
       ctx.beginPath(); ctx.arc(k.x, k.y, HEX_W * 1.75, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2); ctx.stroke();
     }
     if (game.shielded) {
+      // linked generator pairs: a pink tether, and a ghost with a countdown while one waits for its twin
+      for (const gen of game.level.generators) {
+        if (gen.link && gen.link !== undefined && game.level.generators.indexOf(gen) < game.level.generators.indexOf(gen.link)) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255,154,230,.35)'; ctx.lineWidth = 2; ctx.setLineDash([3, 9]);
+          ctx.lineDashOffset = t * 20;
+          ctx.beginPath(); ctx.moveTo(gen.x, gen.y); ctx.lineTo(gen.link.x, gen.link.y); ctx.stroke();
+          ctx.restore();
+        }
+        if (gen.relinkT && gen.relinkT > 0) {
+          const f = gen.relinkT / LINK_WINDOW;
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255,154,230,.9)'; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.arc(gen.x, gen.y, HEX_R * 0.9, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); ctx.stroke();
+          ctx.fillStyle = '#ffd0f2'; ctx.font = '700 14px "Barlow Semi Condensed", system-ui, sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText(gen.relinkT.toFixed(1), gen.x, gen.y + 5);
+          ctx.restore();
+        }
+      }
+      // HP rings on damaged generators
+      for (const gen of game.level.generators) {
+        if (gen.broken || gen.hp >= gen.maxHp) continue;
+        const f = Math.max(0, gen.hp / gen.maxHp);
+        ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.55)';
+        ctx.beginPath(); ctx.arc(gen.x, gen.y, HEX_R * 1.15, 0, 7); ctx.stroke();
+        ctx.strokeStyle = gen.link ? '#ff9ae6' : '#7fe6ff';
+        ctx.beginPath(); ctx.arc(gen.x, gen.y, HEX_R * 1.15, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); ctx.stroke();
+      }
       // beams from each generator
       for (const gen of game.level.generators) {
         if (gen.broken) continue;

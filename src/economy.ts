@@ -34,11 +34,12 @@ export const CLEAR_TARGET = 0.7;
 
 /** Cost of the next in-level purchase. Scales with the level so prices track Shard income. */
 export function inLevelCost(base: number, owned: number, L: number) {
-  return Math.ceil(base * Math.pow(1.45, owned) * (levelBaseHp(L) / levelBaseHp(1)));
+  return Math.ceil(base * Math.pow(IN_LEVEL_GROWTH, owned) * (levelBaseHp(L) / levelBaseHp(1)));
 }
-export const BOOST_BASE: Record<BoostId, number> = { damage: 10, fireRate: 12, speed: 8, range: 8 };
-export const SHOT_UNLOCK_BASE = 22;
-export const SHOT_LEVEL_BASE = 18;
+export const IN_LEVEL_GROWTH = 1.6;
+export const BOOST_BASE: Record<BoostId, number> = { damage: 40, fireRate: 45, speed: 30, range: 30 };
+export const SHOT_UNLOCK_BASE = 90;
+export const SHOT_LEVEL_BASE = 70;
 
 // ---------- permanent (Ore and skill points) ----------
 
@@ -51,17 +52,17 @@ export interface OreLineInfo { id: OreLine; group: string; name: string; base: n
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 export const ORE_LINES: OreLineInfo[] = [
-  { id: 'damage', group: 'Blaster', name: 'Damage', base: 40, growth: 1.25, effect: n => `×${blasterPermMult(n).toFixed(2)}` },
-  { id: 'fireRate', group: 'Blaster', name: 'Fire rate', base: 40, growth: 1.2, effect: n => `+${pct(n * 0.05)}` },
-  { id: 'speed', group: 'Blaster', name: 'Shot speed', base: 25, growth: 1.18, effect: n => `+${pct(n * 0.06)}` },
-  { id: 'crit', group: 'Blaster', name: 'Crit chance', base: 50, growth: 1.22, effect: n => pct(critChance(n)) },
+  { id: 'damage', group: 'Blaster', name: 'Damage', base: 160, growth: 1.25, effect: n => `×${blasterPermMult(n).toFixed(2)}` },
+  { id: 'fireRate', group: 'Blaster', name: 'Fire rate', base: 160, growth: 1.2, effect: n => `+${pct(n * 0.05)}` },
+  { id: 'speed', group: 'Blaster', name: 'Shot speed', base: 100, growth: 1.18, effect: n => `+${pct(n * 0.06)}` },
+  { id: 'crit', group: 'Blaster', name: 'Crit chance', base: 200, growth: 1.22, effect: n => pct(critChance(n)) },
   ...(['multishot', 'ricochet', 'piercing', 'poison'] as ShotId[]).flatMap(s => [
-    { id: `${s}Str` as OreLine, group: SHOT_INFO[s].name, name: 'Strength', base: 60, growth: 1.18, effect: (n: number) => `+${n}` },
-    { id: `${s}Dur` as OreLine, group: SHOT_INFO[s].name, name: 'Active time', base: 50, growth: 1.18, effect: (n: number) => `+${n}` },
-    { id: `${s}Cd` as OreLine, group: SHOT_INFO[s].name, name: 'Cooldown', base: 50, growth: 1.18, effect: (n: number) => `+${n}` },
+    { id: `${s}Str` as OreLine, group: SHOT_INFO[s].name, name: 'Strength', base: 240, growth: 1.18, effect: (n: number) => `+${n}` },
+    { id: `${s}Dur` as OreLine, group: SHOT_INFO[s].name, name: 'Active time', base: 200, growth: 1.18, effect: (n: number) => `+${n}` },
+    { id: `${s}Cd` as OreLine, group: SHOT_INFO[s].name, name: 'Cooldown', base: 200, growth: 1.18, effect: (n: number) => `+${n}` },
   ]),
-  { id: 'shardGain', group: 'Economy', name: 'Shard gain', base: 80, growth: 1.3, effect: n => `+${pct(Math.min(1, n * 0.05))}` },
-  { id: 'oreGain', group: 'Economy', name: 'Ore gain', base: 80, growth: 1.3, effect: n => `+${pct(Math.min(1, n * 0.05))}` },
+  { id: 'shardGain', group: 'Economy', name: 'Shard gain', base: 320, growth: 1.3, effect: n => `+${pct(Math.min(1, n * 0.05))}` },
+  { id: 'oreGain', group: 'Economy', name: 'Ore gain', base: 320, growth: 1.3, effect: n => `+${pct(Math.min(1, n * 0.05))}` },
 ];
 
 export const oreCost = (line: OreLineInfo, n: number) => Math.ceil(line.base * Math.pow(line.growth, n));
@@ -77,7 +78,7 @@ export const SP_ITEMS: SpInfo[] = [
   { id: 'headStart', name: 'Head start', desc: 'Begin every level with enough Shards for a first upgrade.', cost: () => 2, max: 1 },
   { id: 'freeShot', name: 'Ready loadout', desc: 'Your first specialty shot each level is free.', cost: () => 4, max: 1 },
   { id: 'smartAim', name: 'Smart Aim', desc: 'When you are not aiming, the turret picks targets itself: generators, gold and cracked gems first. Toggle it during a level.', cost: () => 3, max: 1 },
-  { id: 'mastery', name: 'Mastery', desc: '×1.05 damage to everything. Repeatable forever.', cost: () => 5, max: Infinity },
+  { id: 'mastery', name: 'Mastery', desc: '×1.05 damage to everything. Repeatable forever.', cost: n => Math.ceil(5 * Math.pow(1.3, n)), max: Infinity },
 ];
 
 // ---------- derived stats ----------
@@ -117,8 +118,8 @@ export function shotStats(id: ShotId, inLevel: number, p: Perm) {
 export function blasterStats(boosts: Record<BoostId, number>, p: Perm) {
   const mastery = Math.pow(1.05, p.sp.mastery ?? 0);
   return {
-    damage: blasterPermMult(lv(p, 'damage')) * mastery * Math.pow(1.18, boosts.damage),
-    fireRate: Math.min(22, 4 * (1 + 0.05 * lv(p, 'fireRate')) * (1 + 0.1 * boosts.fireRate)),
+    damage: blasterPermMult(lv(p, 'damage')) * mastery * Math.pow(1.35, boosts.damage),
+    fireRate: Math.min(22, 4 * (1 + 0.05 * lv(p, 'fireRate')) * (1 + 0.15 * boosts.fireRate)),
     speed: 520 * (1 + 0.06 * lv(p, 'speed')) * (1 + 0.1 * boosts.speed),
     range: 7.5 * (1 + 0.1 * boosts.range), // in hexes
     crit: critChance(lv(p, 'crit')),

@@ -11,12 +11,13 @@ export interface SaveData {
   /** When not aiming, turn the turret toward the direction of travel. */
   aimFollow: boolean;
   smartAimOn: boolean;
+  tutorialDone: boolean;
 }
 
 const KEY = 'blockbuster.save.v1';
 
 export function freshSave(): SaveData {
-  return { version: 1, ore: 0, sp: 0, highest: 0, stars: {}, perm: { ore: {}, sp: {} }, muted: false, aimFollow: false, smartAimOn: true };
+  return { version: 1, ore: 0, sp: 0, highest: 0, stars: {}, perm: { ore: {}, sp: {} }, muted: false, aimFollow: false, smartAimOn: true, tutorialDone: false };
 }
 
 export function loadSave(): SaveData {

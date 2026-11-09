@@ -4,11 +4,18 @@ import { Rng, hash2 } from './rng';
 import { generatorCount, levelBaseHp, levelRadius } from './economy';
 
 /** Gems take this many times more hits than the base HP suggests; Shards pay back 1/HP_SCALE per HP. */
-export const HP_SCALE = 2.5;
+export const HP_SCALE = 1.6;
 
 export enum Kind { Floor = 1, Gem = 2, Bedrock = 3, Keystone = 4, Generator = 5 }
 
-export interface Entity { hp: number; maxHp: number; x: number; y: number; cells: Cell[]; broken: boolean }
+export interface Entity {
+  hp: number; maxHp: number; x: number; y: number; cells: Cell[]; broken: boolean;
+  /** Linked generator: both must break within LINK_WINDOW seconds or the first one re-forms. */
+  link?: Entity;
+  relinkT?: number;
+  paid?: boolean;
+}
+export const LINK_WINDOW = 8;
 
 export interface Cell {
   q: number; r: number; x: number; y: number;
@@ -16,6 +23,10 @@ export interface Cell {
   kind: Kind;
   hp: number; maxHp: number;
   gold: boolean; ore: boolean; armor: boolean; boom: boolean;
+  /** Ore paid when broken, in units of the level's base HP (veins 1.5, deposits 5, geodes 25). */
+  oreAmt: number;
+  geode: boolean;
+  regen: boolean; idleT: number;
   border: boolean;
   shade: number; // 0..1 cosmetic variation
   flash: number;
@@ -34,6 +45,8 @@ export interface Level {
   generators: Entity[];
   goldTotal: number;
   gemTotal: number;
+  boomTotal: number;
+  shell: boolean;
   armorValue: number;
   /** HP that maps to the middle of the colour ladder for this level. */
   hpUnit: number;
@@ -55,7 +68,7 @@ export function generateLevel(L: number): Level {
     const [x, y] = hexToPixel(q, r);
     const c: Cell = {
       q, r, x, y, idx: key(q, r), kind: d === N ? Kind.Bedrock : Kind.Gem, hp: 0, maxHp: 0,
-      gold: false, ore: false, armor: false, boom: false, border: d === N,
+      gold: false, ore: false, armor: false, boom: false, oreAmt: 0, geode: false, regen: false, idleT: 0, border: d === N,
       shade: hash2(q, r, L), flash: 0, poisonDps: 0, poisonT: 0, entity: null,
     };
     grid[c.idx] = c;
@@ -71,7 +84,7 @@ export function generateLevel(L: number): Level {
     }
     return best!;
   };
-  const isPlainGem = (c: Cell) => c.kind === Kind.Gem && !c.gold && !c.ore && !c.border;
+  const isPlainGem = (c: Cell) => c.kind === Kind.Gem && !c.gold && !c.ore && !c.geode && !c.border;
 
   // ---- inner boundary ring with gaps ----
   const ringR = Math.round(N * 0.55);
@@ -118,14 +131,26 @@ export function generateLevel(L: number): Level {
   // ---- force field generators, spread around the map away from the keystone ----
   const generators: Entity[] = [];
   const gN = generatorCount(L);
+  const linked = L >= 10;
   for (let i = 0; i < gN; i++) {
-    const ang = kAng + Math.PI * (0.45 + (1.1 * (i + 0.5)) / gN) * (i % 2 ? -1 : 1) + rng.range(-0.25, 0.25);
-    const dist = N * rng.range(0.45, 0.8) * Math.sqrt(3) * 22;
-    const gc = nearestTo(Math.cos(ang) * dist, Math.sin(ang) * dist, c => c.kind === Kind.Gem && hexDist(c.q, c.r) <= N - 2);
+    let gc: Cell;
+    if (linked && i % 2 === 1) {
+      // the twin of a linked pair sits a short walk from its partner
+      const prev = generators[i - 1];
+      const a = rng.range(0, Math.PI * 2), d = rng.range(5, 7) * Math.sqrt(3) * 22;
+      gc = nearestTo(prev.x + Math.cos(a) * d, prev.y + Math.sin(a) * d, c => c.kind === Kind.Gem && hexDist(c.q, c.r) <= N - 2 && hexDist(c.q, c.r, prev.cells[0].q, prev.cells[0].r) >= 4);
+    } else {
+      const slot = linked ? Math.floor(i / 2) : i, slots = linked ? Math.ceil(gN / 2) : gN;
+      const ang = kAng + Math.PI * (0.45 + (1.1 * (slot + 0.5)) / slots) * (slot % 2 ? -1 : 1) + rng.range(-0.25, 0.25);
+      const dist = N * rng.range(0.45, 0.8) * Math.sqrt(3) * 22;
+      gc = nearestTo(Math.cos(ang) * dist, Math.sin(ang) * dist, c => c.kind === Kind.Gem && hexDist(c.q, c.r) <= N - 2);
+    }
     const g: Entity = { hp: base * 18, maxHp: base * 18, x: gc.x, y: gc.y, cells: [gc], broken: false };
     gc.kind = Kind.Generator; gc.entity = g;
     generators.push(g);
   }
+  // From level 10, generators come in linked pairs that must break within a few seconds of each other.
+  if (linked) for (let i = 0; i + 1 < generators.length; i += 2) { generators[i].link = generators[i + 1]; generators[i + 1].link = generators[i]; }
 
   // ---- golden hexes ----
   const gOff = rng.range(0, Math.PI * 2);
@@ -141,19 +166,43 @@ export function generateLevel(L: number): Level {
     let c: Cell | null = rng.pick(cells.filter(c => isPlainGem(c) && hexDist(c.q, c.r) >= 3));
     const len = rng.int(4, 7);
     for (let i = 0; i < len && c; i++) {
-      if (isPlainGem(c)) c.ore = true;
+      if (isPlainGem(c)) { c.ore = true; c.oreAmt = 1.5; }
       const opts: Cell[] = nbrs(c).filter(isPlainGem);
       c = opts.length ? rng.pick(opts) : null;
     }
   }
 
-  // ---- armored and explosive gems ----
+  // ---- ore deposits: 3-gem clusters tucked into nooks against the walls ----
+  const nooks = rng.int(2, 3);
+  const nookCells = cells.filter(c => isPlainGem(c) && hexDist(c.q, c.r) >= 4 && nbrs(c).filter(n => n.kind === Kind.Bedrock).length >= 3);
+  for (let i = 0; i < nooks && nookCells.length; i++) {
+    const c0 = nookCells.splice(rng.int(0, nookCells.length - 1), 1)[0];
+    const cluster = [c0, ...nbrs(c0).filter(isPlainGem).slice(0, 2)];
+    for (const c of cluster) { c.ore = true; c.oreAmt = 5; }
+  }
+  // ---- geodes: armored single gems worth a lot of Ore, often beside a generator ----
+  const geodes = L < 4 ? 1 : 2;
+  for (let i = 0; i < geodes; i++) {
+    const g = generators[i];
+    const near = g ? nbrs(g.cells[0]).flatMap(nbrs).filter(c => isPlainGem(c) && c !== g.cells[0]) : [];
+    const pool = near.length ? near : cells.filter(c => isPlainGem(c) && hexDist(c.q, c.r) >= N * 0.5);
+    if (!pool.length) continue;
+    const c = rng.pick(pool);
+    c.geode = true; c.armor = true; c.oreAmt = 25;
+  }
+  // ---- Keystone shell: a ring of armored gems around it on some levels from 6 ----
+  const shell = L >= 6 && (L % 2 === 0 || generators.length === 0);
+  if (shell) for (const c of keystone.cells) for (const n of nbrs(c)) if (n.kind !== Kind.Keystone && !n.border) { n.kind = Kind.Gem; n.armor = true; }
+
+  // ---- armored, explosive and regenerating gems ----
+  const regenP = L < 9 ? 0 : Math.min(0.08, 0.012 * (L - 8));
   const armorP = L < 3 ? 0 : Math.min(0.12, 0.03 + 0.003 * L);
   for (const c of cells) {
     if (!isPlainGem(c) || hexDist(c.q, c.r) < 4) continue;
     const roll = rng.next();
     if (roll < armorP) c.armor = true;
     else if (roll < armorP + 0.025) c.boom = true;
+    else if (roll < armorP + 0.025 + regenP) c.regen = true;
   }
 
   // ---- make sure the keystone and every generator can be reached ----
@@ -169,7 +218,8 @@ export function generateLevel(L: number): Level {
     const d = hexDist(c.q, c.r) / N;
     let hp = base * HP_SCALE * (0.6 + 2.6 * d) * (0.7 + 0.6 * noise);
     if (c.armor) hp *= 1.8;
-    if (c.ore) hp *= 1.4;
+    if (c.ore) hp *= c.oreAmt > 2 ? 1.8 : 1.4;
+    if (c.geode) hp *= 2.2;
     if (c.gold) hp *= 2.5;
     c.hp = c.maxHp = hp;
   }
@@ -182,6 +232,8 @@ export function generateLevel(L: number): Level {
     L, radius: N, base, size, grid, cells, keystone, generators,
     goldTotal: cells.filter(c => c.gold).length,
     gemTotal: cells.filter(c => c.kind === Kind.Gem).length,
+    boomTotal: cells.filter(c => c.kind === Kind.Gem && c.boom).length,
+    shell,
     armorValue: base * HP_SCALE * 0.45,
     hpUnit: base * HP_SCALE,
   };

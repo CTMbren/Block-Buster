@@ -5,6 +5,7 @@ import {
   type ShotId, type OreLine,
 } from './economy';
 import type { Game, LevelResult } from './game';
+import { CHALLENGE_BIT, challengeLabel, challengeTitle } from './challenge';
 import type { SaveData } from './save';
 
 const $ = <T extends HTMLElement = HTMLElement>(root: ParentNode, sel: string) => root.querySelector(sel) as T;
@@ -37,7 +38,7 @@ export class Ui {
     this.root = root;
   }
 
-  clear() { this.root.innerHTML = ''; this.shopOpen = false; this.abilityEls = {}; this.lastHud = ''; this.lastShop = ''; }
+  clear() { this.root.innerHTML = ''; this.lastTip = null; this.shopOpen = false; this.abilityEls = {}; this.lastHud = ''; this.lastShop = ''; }
 
   // ---------------- title ----------------
   showTitle(save: SaveData) {
@@ -79,7 +80,8 @@ export class Ui {
     const cells = Array.from({ length: max }, (_, i) => {
       const L = i + 1, s = save.stars[L] ?? 0;
       const n = (s & 1 ? 1 : 0) + (s & 2 ? 1 : 0) + (s & 4 ? 1 : 0);
-      return `<button class="lvl-cell ${L === max ? 'next' : ''}" data-play="${L}"><b>${L}</b><span>${'★'.repeat(n)}${'☆'.repeat(3 - n)}</span></button>`;
+      const bonus = s & CHALLENGE_BIT ? '<i class="bonus-dot">✦</i>' : '';
+      return `<button class="lvl-cell ${L === max ? 'next' : ''}" data-play="${L}"><b>${L}</b><span>${'★'.repeat(n)}${'☆'.repeat(3 - n)}${bonus}</span></button>`;
     }).reverse().join('');
     const el = h(`<div class="modal"><div class="plate sheet"><div class="sheet-head"><h2>Choose level</h2><button class="x" data-close>✕</button></div>
       <p class="hint">Replays keep paying Ore. Stars pay skill points once per level.</p><div class="lvl-grid">${cells}</div></div></div>`);
@@ -108,6 +110,7 @@ export class Ui {
         </div>
         <div class="objectives" data-obj></div>
         <div class="collapse" data-collapse hidden></div>
+        <div class="tip" data-tip hidden></div>
         <div class="abilities" data-abilities></div>
         <div class="tray" data-tray hidden></div>
       </div>`);
@@ -228,7 +231,9 @@ export class Ui {
       if (t.textContent !== txt) t.textContent = txt;
     }
     const lv = game.level;
-    const key = [Math.floor(game.shards), Math.floor(game.oreEarned), game.goldsBroken, Math.floor(game.clearPct * 100), game.generatorsLeft, lv.keystone.broken, game.gateOpen ? Math.ceil(game.collapseT) : -1, game.anythingAffordable()].join('|');
+    const ch = game.challenge;
+    const chText = challengeLabel(ch, game.time);
+    const key = [chText, ch.done, Math.floor(game.shards), Math.floor(game.oreEarned), game.goldsBroken, Math.floor(game.clearPct * 100), game.generatorsLeft, lv.keystone.broken, game.gateOpen ? Math.ceil(game.collapseT) : -1, game.anythingAffordable()].join('|');
     if (!force && key === this.lastHud) { if (this.shopOpen) this.renderShop(game); return; }
     this.lastHud = key;
     $(this.hud, '[data-shards]').textContent = fmt(game.shards);
@@ -241,11 +246,21 @@ export class Ui {
       `<div class="chip ${game.goldsBroken >= lv.goldTotal ? 'done' : 'gold'}">★ Gold ${game.goldsBroken}/${lv.goldTotal}</div>`,
       `<div class="chip ${game.clearPct >= CLEAR_TARGET ? 'done' : ''}">Clear ${clear}%<span class="bar"><i style="width:${Math.min(100, clear / CLEAR_TARGET)}%"></i></span></div>`,
     ];
+    objs.push(`<div class="chip bonus ${ch.done ? 'done' : ''}">✦ ${ch.done ? 'Bonus complete' : chText}</div>`);
     $(this.hud, '[data-obj]').innerHTML = objs.join('');
     const col = $(this.hud, '[data-collapse]');
     if (game.gateOpen) { col.hidden = false; col.innerHTML = `Exit open · mine collapses in <b>${Math.ceil(game.collapseT)}s</b>`; }
     $(this.hud, '[data-shop]').classList.toggle('glow', game.anythingAffordable());
     if (this.shopOpen) this.renderShop(game);
+  }
+
+  private lastTip: string | null = null;
+  setTip(text: string | null) {
+    if (!this.hud || text === this.lastTip) return;
+    this.lastTip = text;
+    const el = $(this.hud, '[data-tip]');
+    el.hidden = !text;
+    if (text) el.textContent = text;
   }
 
   showPause(save: SaveData) {
@@ -279,12 +294,16 @@ export class Ui {
       const fresh = res.newStars & (bit as number);
       return `<div class="star ${got ? 'got' : 'miss'}" style="animation-delay:${0.25 + i * 0.35}s"><span>★</span><small>${label}</small>${fresh ? '<em>+SP</em>' : ''}</div>`;
     }).join('') : '';
+    const bonusHtml = res ? (() => {
+      const got = res.stars & CHALLENGE_BIT, fresh = res.newStars & CHALLENGE_BIT;
+      return `<div class="bonus-row ${got ? 'got' : 'miss'}"><span>✦</span><div><b>Bonus</b> ${challengeTitle(res.challenge)}</div>${fresh ? '<em>+1 SP</em>' : got ? '<small>done before</small>' : '<small>missed</small>'}</div>`;
+    })() : '';
     const title = !res ? 'Workshop' : res.reason === 'abandon' ? 'Level left' : res.reason === 'collapse' ? 'Mine collapsed' : 'Level cleared';
     const el = h(`
       <div class="screen results">
         <div class="res-top">
           <h2>${title}${res ? ` <span>· Level ${res.L}</span>` : ''}</h2>
-          ${res ? `<div class="stars">${starHtml}</div>
+          ${res ? `<div class="stars">${starHtml}</div>${bonusHtml}
           <div class="rewards">
             <div class="rw plate"><span class="sp-ic">✦</span><b>+${res.spGained}</b><small>skill points</small></div>
             <div class="rw plate"><span class="ore-ic"></span><b>+${fmt(res.ore)}</b><small>Ore (${fmt(res.salvage)} salvage)</small></div>
