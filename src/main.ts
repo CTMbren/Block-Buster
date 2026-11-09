@@ -75,8 +75,10 @@ function frame(now: number) {
   input.setCenter(renderer.w / 2, renderer.h / 2);
   if (game) {
     input.update();
-    if (!paused) game.update(dt, input.moveX, input.moveY, input.aim);
-    renderer.draw(game, input, paused ? 0 : dt);
+    const frozen = paused || ui.shopOpen; // the game stops while the shop is open
+    if (!frozen) game.update(dt, input.moveX, input.moveY, input.aim);
+    else input.reset();
+    renderer.draw(game, input, frozen ? 0 : dt);
     ui.updateHud(game);
     if (game.result) endLevel(game);
   } else {

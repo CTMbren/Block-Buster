@@ -25,7 +25,7 @@ export class Ui {
   root: HTMLElement;
   private hud!: HTMLElement;
   private abilityEls: Partial<Record<ShotId, HTMLElement>> = {};
-  private shopOpen = false;
+  shopOpen = false;
   private shopEl!: HTMLElement;
   private lastHud = '';
   private lastShop = '';
@@ -168,7 +168,7 @@ export class Ui {
     }).join('');
     const html = `
       <div class="plate sheet">
-        <div class="sheet-head"><h2>Field shop</h2><span class="live">● game running</span><button class="x" data-close>✕</button></div>
+        <div class="sheet-head"><h2>Field shop</h2><span class="live paused">❚❚ paused</span><button class="x" data-close>✕</button></div>
         <div class="bal"><span class="shard-ic"></span><b>${fmt(game.shards)}</b> Shards</div>
         <div class="grp">Blaster</div>${boostRows}
         <div class="grp">Specialty shots <span class="slots">${game.shotsOwned}/${slots} slots</span></div>${shotRows}

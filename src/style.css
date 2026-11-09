@@ -126,6 +126,7 @@ i.shard-ic, i.ore-ic { width: 11px; height: 13px; margin-right: 4px; }
 .sheet-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 .sheet-head h2 { font-family: var(--display); font-weight: 400; font-size: 26px; color: var(--brass-hi); margin: 0; flex: 1; line-height: 1; }
 .live { font-size: 12px; color: #ff9a7a; animation: blink 1.2s steps(2) infinite; }
+.live.paused { color: var(--parch-dim); animation: none; }
 @keyframes blink { 50% { opacity: .35; } }
 .x { width: 40px; height: 40px; border-radius: 10px; background: rgba(0, 0, 0, .35); color: var(--parch); font-size: 18px; }
 .bal { font-size: 15px; color: var(--parch-dim); display: flex; align-items: center; margin-bottom: 4px; }
