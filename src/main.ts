@@ -12,6 +12,7 @@ const renderer = new Renderer(canvas);
 const input = new Input(canvas);
 let save = loadSave();
 setMuted(save.muted);
+input.followMove = save.aimFollow;
 
 let game: Game | null = null;
 let paused = false;
@@ -21,14 +22,17 @@ const ui = new Ui(document.getElementById('ui')!, {
   play(L) {
     unlockAudio();
     game = new Game(L, save.perm);
+    game.smartAimOn = save.smartAimOn;
     paused = false;
     input.reset();
     ui.showLevel(game);
   },
-  pause() { if (game && !game.result) { paused = true; ui.showPause(save.muted); } },
+  pause() { if (game && !game.result) { paused = true; ui.showPause(save); } },
   resume() { paused = false; input.reset(); },
   abandon() { if (game) { game.finish('abandon'); paused = false; } },
   toggleMute() { save.muted = !save.muted; setMuted(save.muted); writeSave(save); },
+  toggleAimFollow() { save.aimFollow = !save.aimFollow; input.followMove = save.aimFollow; writeSave(save); return save.aimFollow; },
+  toggleSmartAim() { if (game) { game.smartAimOn = !game.smartAimOn; save.smartAimOn = game.smartAimOn; writeSave(save); } },
   buyOre(id: OreLine) {
     const line = ORE_LINES.find(l => l.id === id)!;
     const n = save.perm.ore[id] ?? 0;
@@ -65,7 +69,7 @@ function endLevel(g: Game) {
 }
 
 window.addEventListener('resize', () => renderer.resize());
-document.addEventListener('visibilitychange', () => { if (document.hidden) ui.root && game && !paused && (paused = true, ui.showPause(save.muted)); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) ui.root && game && !paused && (paused = true, ui.showPause(save)); });
 canvas.addEventListener('pointerdown', () => unlockAudio());
 
 let last = performance.now();
@@ -76,8 +80,10 @@ function frame(now: number) {
   if (game) {
     input.update();
     const frozen = paused || ui.shopOpen; // the game stops while the shop is open
-    if (!frozen) game.update(dt, input.moveX, input.moveY, input.aim);
-    else input.reset();
+    if (!frozen) {
+      game.update(dt, input.moveX, input.moveY, input.aim, input.aimHeld);
+      if (game.autoAiming) input.aim = game.player.angle; // manual aim picks up where Smart Aim left off
+    } else input.reset();
     renderer.draw(game, input, frozen ? 0 : dt);
     ui.updateHud(game);
     if (game.result) endLevel(game);

@@ -8,12 +8,15 @@ export interface SaveData {
   stars: Record<number, number>; // level -> bitmask of stars earned (1 keystone, 2 clear, 4 golds)
   perm: Perm;
   muted: boolean;
+  /** When not aiming, turn the turret toward the direction of travel. */
+  aimFollow: boolean;
+  smartAimOn: boolean;
 }
 
 const KEY = 'blockbuster.save.v1';
 
 export function freshSave(): SaveData {
-  return { version: 1, ore: 0, sp: 0, highest: 0, stars: {}, perm: { ore: {}, sp: {} }, muted: false };
+  return { version: 1, ore: 0, sp: 0, highest: 0, stars: {}, perm: { ore: {}, sp: {} }, muted: false, aimFollow: false, smartAimOn: true };
 }
 
 export function loadSave(): SaveData {

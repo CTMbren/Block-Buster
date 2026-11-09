@@ -57,6 +57,11 @@ export class Game {
   collapseT = 0;
   result: LevelResult | null = null;
   slowMo = 0;
+  /** Smart Aim (a skill-point unlock): the turret picks targets while you aren't aiming. */
+  smartAimOn = true;
+  autoAiming = false;
+  autoTarget: Cell | null = null;
+  private retargetT = 0;
 
   constructor(L: number, public perm: Perm) {
     this.L = L;
@@ -115,11 +120,27 @@ export class Game {
   private isActive(id: ShotId) { return this.shots[id].active > 0; }
 
   // ---------------- main update ----------------
-  update(dt: number, moveX: number, moveY: number, aim: number) {
+  get hasSmartAim() { return !!this.perm.sp.smartAim; }
+
+  update(dt: number, moveX: number, moveY: number, aim: number, aimHeld = true) {
     if (this.result) return;
     if (this.slowMo > 0) { this.slowMo -= dt; dt *= 0.3; }
     this.time += dt;
-    this.player.angle = aim;
+    this.autoAiming = this.hasSmartAim && this.smartAimOn && !aimHeld;
+    if (this.autoAiming) {
+      this.retargetT -= dt;
+      if (this.retargetT <= 0 || !this.validTarget(this.autoTarget)) { this.retargetT = 0.12; this.pickTarget(moveX, moveY); }
+      if (this.autoTarget) {
+        const want = Math.atan2(this.autoTarget.y - this.player.y, this.autoTarget.x - this.player.x);
+        let d = want - this.player.angle;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        const maxTurn = 12.5 * dt; // about 720 degrees per second
+        this.player.angle += Math.max(-maxTurn, Math.min(maxTurn, d));
+      }
+    } else {
+      this.autoTarget = null;
+      this.player.angle = aim;
+    }
     this.movePlayer(dt, moveX, moveY);
 
     for (const id of SHOTS) {
@@ -146,6 +167,55 @@ export class Game {
       if (Math.hypot(this.player.x - k.x, this.player.y - k.y) < HEX_W * 0.8) this.finish('exit');
       else if (this.collapseT <= 0) this.finish('collapse');
     }
+  }
+
+  private validTarget(c: Cell | null): c is Cell {
+    if (!c) return false;
+    if (c.kind === Kind.Gem || c.kind === Kind.Generator) return true;
+    return c.kind === Kind.Keystone && !this.shielded;
+  }
+
+  /** Is there a clear shot from the turret to this cell? */
+  private canHit(c: Cell) {
+    const p = this.player;
+    const dx = c.x - p.x, dy = c.y - p.y, L = Math.hypot(dx, dy);
+    for (let t = 12; t < L - HEX_INNER * 0.8; t += 7) {
+      const cc = this.cellAtPixel(p.x + (dx * t) / L, p.y + (dy * t) / L);
+      if (cc && cc !== c && SOLID(cc.kind) && !(c.entity && cc.entity === c.entity)) return false;
+    }
+    return true;
+  }
+
+  /** Smart Aim target choice: objectives, then gold, then cracked gems, then the nearest. */
+  private pickTarget(mx: number, my: number) {
+    const p = this.player;
+    const range = this.blaster.range * HEX_W;
+    const moving = mx * mx + my * my > 0.04;
+    const heading = Math.atan2(my, mx);
+    const cone = (40 * Math.PI) / 180;
+    let best: Cell | null = null, bestScore = Infinity;
+    for (const c of this.level.cells) {
+      if (!this.validTarget(c)) continue;
+      const dx = c.x - p.x, dy = c.y - p.y;
+      if (Math.abs(dx) > range || Math.abs(dy) > range) continue;
+      const dist = Math.hypot(dx, dy);
+      if (dist > range) continue;
+      if (moving) {
+        let da = Math.atan2(dy, dx) - heading;
+        da = Math.abs(Math.atan2(Math.sin(da), Math.cos(da)));
+        if (da > cone) continue;
+      }
+      let score = dist / HEX_W;
+      if (c.kind === Kind.Generator || c.kind === Kind.Keystone) score -= 6;
+      if (c.gold) score -= 4;
+      if (c.kind === Kind.Gem && c.hp < c.maxHp) score -= 2;
+      if (c.ore) score -= 1;
+      if (c === this.autoTarget) score -= 2.5; // stick with the current target
+      if (score >= bestScore) continue;
+      if (!this.canHit(c)) continue;
+      best = c; bestScore = score;
+    }
+    this.autoTarget = best;
   }
 
   private movePlayer(dt: number, mx: number, my: number) {

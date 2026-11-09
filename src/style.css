@@ -95,18 +95,19 @@ i.shard-ic, i.ore-ic { width: 11px; height: 13px; margin-right: 4px; }
 @keyframes glow { 50% { box-shadow: 0 0 0 2px rgba(243, 214, 143, .6), 0 0 22px rgba(255, 179, 90, .55); } }
 
 /* ---------- ability buttons (arc above the right thumb) ---------- */
-.abilities { position: absolute; right: calc(8px + var(--safe-r)); bottom: calc(10px + var(--safe-b)); width: 160px; height: 160px; pointer-events: none; }
+.abilities { position: absolute; right: calc(8px + var(--safe-r)); bottom: calc(190px + var(--safe-b)); display: flex; flex-direction: column-reverse; gap: 12px; align-items: center; pointer-events: none; }
 .ability {
-  pointer-events: auto; position: absolute; width: 64px; height: 64px; border-radius: 50%;
+  pointer-events: auto; position: relative; width: 60px; height: 60px; border-radius: 50%; flex: none;
   background: radial-gradient(circle at 35% 30%, #4a3c30, #1c1612 75%);
   border: 2px solid var(--brass-lo); box-shadow: 0 4px 12px rgba(0, 0, 0, .6);
   display: flex; align-items: center; justify-content: center; touch-action: none;
 }
-.ability.slot0 { right: 4px; bottom: 4px; }
-.ability.slot1 { right: 4px; bottom: 86px; }
-.ability.slot2 { right: 86px; bottom: 4px; }
-.ability.slot3 { right: 86px; bottom: 86px; }
-.ability .ring { position: absolute; inset: -5px; border-radius: 50%; background: conic-gradient(var(--c) calc(var(--p, 0) * 360deg), rgba(255, 255, 255, .08) 0); -webkit-mask: radial-gradient(circle, transparent 33px, #000 34px); mask: radial-gradient(circle, transparent 33px, #000 34px); }
+.ability.pressed, .smart-toggle.pressed { transform: scale(.92); }
+.smart-toggle { pointer-events: auto; width: 52px; height: 44px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--parch-dim); line-height: 1; touch-action: none; }
+.smart-toggle span { font-size: 18px; }
+.smart-toggle small { font-size: 11px; font-weight: 700; }
+.smart-toggle.on { color: var(--field); border-color: #2b6a7a; box-shadow: 0 0 12px rgba(127, 230, 255, .35), inset 0 1px 0 rgba(243, 214, 143, .25); }
+.ability .ring { position: absolute; inset: -5px; border-radius: 50%; background: conic-gradient(var(--c) calc(var(--p, 0) * 360deg), rgba(255, 255, 255, .08) 0); -webkit-mask: radial-gradient(circle, transparent 31px, #000 32px); mask: radial-gradient(circle, transparent 31px, #000 32px); }
 .ability .ic { font-size: 26px; color: var(--c); line-height: 1; margin-top: -10px; }
 .ability .t { position: absolute; bottom: 9px; font-size: 12px; font-weight: 700; color: var(--parch); }
 .ability .nm { display: none; }

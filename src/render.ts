@@ -2,7 +2,7 @@
 import { HEX_R, HEX_W, hexCorners, hexPath } from './hex';
 import { Kind, type Cell } from './level';
 import { gemTier, type Game } from './game';
-import type { Input } from './input';
+import type { Input, Stick } from './input';
 
 const TIERS = [ // index 0 = grey stone (one hit left) .. 6 = amethyst
   { h: 28, s: 6, l: 44 }, { h: 350, s: 78, l: 46 }, { h: 27, s: 92, l: 49 }, { h: 46, s: 92, l: 54 },
@@ -285,6 +285,7 @@ export class Renderer {
     }
 
     this.drawKeystoneAndField(game);
+    if (!menu) { this.drawLaser(game); this.drawTargetBracket(game); }
     this.drawProjectiles(game);
     this.drawPlayer(game);
     this.drawParticles(game);
@@ -319,7 +320,73 @@ export class Renderer {
     if (menu) return;
     this.drawCombo(game);
     this.drawArrows(game);
-    this.drawJoystick(input);
+    this.drawStick(input.joy, input.JOY_R, '201,154,69', '243,214,143');
+    this.drawStick(input.aimStick, input.AIM_R, '90,190,220', '170,235,255');
+  }
+
+  /** Laser sight: where the shot will land, including the bounce path while Ricochet is active. */
+  private drawLaser(game: Game) {
+    const ctx = this.ctx;
+    const p = game.player;
+    let x = p.x + Math.cos(p.angle) * 16, y = p.y + Math.sin(p.angle) * 16;
+    let dx = Math.cos(p.angle), dy = Math.sin(p.angle);
+    let left = game.blaster.range * HEX_W;
+    let bounces = game.shots.ricochet.active > 0 ? Math.min(2, game.shotStats('ricochet').bounces) : 0;
+    let pierce = game.shots.piercing.active > 0 ? game.shotStats('piercing').pierces : 0;
+    const segs: [number, number, number, number, boolean][] = [];
+    let sx = x, sy = y, bounced = false, last: Cell | null = null, end = false;
+    while (left > 0 && !end) {
+      x += dx * 5; y += dy * 5; left -= 5;
+      const c = game.cellAtPixel(x, y);
+      if (!c) break;
+      if (c === last || c.kind === Kind.Floor) { if (c !== last) last = null; continue; }
+      const hard = c.kind === Kind.Bedrock || (c.kind === Kind.Keystone && game.shielded);
+      if (!hard && pierce > 0) { pierce--; last = c; continue; }
+      segs.push([sx, sy, x, y, bounced]);
+      if (bounces > 0) {
+        const edge = Math.round(Math.atan2(y - c.y, x - c.x) / (Math.PI / 3)) * (Math.PI / 3);
+        const nx = Math.cos(edge), ny = Math.sin(edge);
+        const dot = dx * nx + dy * ny;
+        if (dot < 0) { dx -= 2 * dot * nx; dy -= 2 * dot * ny; }
+        x = c.x + nx * (HEX_R * 0.87 + 1.5); y = c.y + ny * (HEX_R * 0.87 + 1.5);
+        sx = x; sy = y; bounces--; bounced = true; last = null;
+      } else end = true;
+    }
+    if (!end) segs.push([sx, sy, x, y, bounced]);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    ctx.setLineDash([6, 7]);
+    ctx.lineDashOffset = -this.t * 30;
+    for (const [ax, ay, bx, by, b] of segs) {
+      ctx.strokeStyle = b ? 'rgba(127,230,255,.55)' : 'rgba(255,214,150,.38)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    const tail = segs[segs.length - 1];
+    if (tail && end) {
+      ctx.fillStyle = 'rgba(255,230,180,.75)';
+      ctx.beginPath(); ctx.arc(tail[2], tail[3], 2.6, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** Corner brackets on the gem Smart Aim has picked. */
+  private drawTargetBracket(game: Game) {
+    const c = game.autoAiming ? game.autoTarget : null;
+    if (!c) return;
+    const ctx = this.ctx;
+    const r = HEX_R * 1.05, k = 6;
+    ctx.save();
+    ctx.strokeStyle = c.gold ? '#ffe27a' : '#9ff0ff';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 6;
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      const x = c.x + sx * r, y = c.y + sy * r;
+      ctx.beginPath(); ctx.moveTo(x - sx * k, y); ctx.lineTo(x, y); ctx.lineTo(x, y - sy * k); ctx.stroke();
+    }
+    ctx.restore();
   }
 
   private star(x: number, y: number, r: number, col: string) {
@@ -504,18 +571,17 @@ export class Renderer {
     }
   }
 
-  private drawJoystick(input: Input) {
-    if (!input.joy.active) return;
+  private drawStick(j: Stick, R: number, base: string, knob: string) {
+    if (!j.active) return;
     const ctx = this.ctx;
-    const j = input.joy;
-    ctx.beginPath(); ctx.arc(j.ox, j.oy, input.JOY_R, 0, 7);
+    ctx.beginPath(); ctx.arc(j.ox, j.oy, R, 0, 7);
     ctx.fillStyle = 'rgba(43,34,28,.35)'; ctx.fill();
-    ctx.strokeStyle = 'rgba(201,154,69,.6)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = `rgba(${base},.6)`; ctx.lineWidth = 2; ctx.stroke();
     let dx = j.x - j.ox, dy = j.y - j.oy;
     const d = Math.hypot(dx, dy);
-    if (d > input.JOY_R) { dx *= input.JOY_R / d; dy *= input.JOY_R / d; }
-    ctx.beginPath(); ctx.arc(j.ox + dx, j.oy + dy, 24, 0, 7);
-    ctx.fillStyle = 'rgba(201,154,69,.55)'; ctx.fill();
-    ctx.strokeStyle = 'rgba(243,214,143,.9)'; ctx.stroke();
+    if (d > R) { dx *= R / d; dy *= R / d; }
+    ctx.beginPath(); ctx.arc(j.ox + dx, j.oy + dy, 22, 0, 7);
+    ctx.fillStyle = `rgba(${base},.55)`; ctx.fill();
+    ctx.strokeStyle = `rgba(${knob},.9)`; ctx.stroke();
   }
 }

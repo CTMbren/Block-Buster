@@ -6,7 +6,8 @@ A top-down hex-grid shooter for the browser, built mobile-first. Drill outward t
 
 ## How it plays
 
-- **Move:** drag on the left side of the screen (WASD on desktop). **Aim:** touch anywhere else (mouse on desktop). The blaster fires automatically.
+- **Move:** drag on the left side of the screen (WASD on desktop). **Aim:** drag with your right thumb anywhere else; the stick appears where your thumb lands and the aim holds when you let go (mouse on desktop). The blaster fires automatically and a laser sight shows where shots land, including Ricochet bounces.
+- **Smart Aim** is a skill-point unlock: while you are not aiming, the turret picks targets itself. Toggle it with the Auto button; dragging the aim stick always overrides it.
 - Gem colour shows remaining HP: amethyst → sapphire → emerald → topaz → amber → ruby → grey (one hit left).
 - Every level is generated from its number, so there's no limit and any level replays exactly.
 - **Objective:** break the 7-hex Keystone. From level 3 it sits inside a force field powered by generators elsewhere on the map; follow the beams and break them first.

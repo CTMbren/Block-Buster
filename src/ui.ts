@@ -16,6 +16,8 @@ export interface UiHandlers {
   pause(): void;
   abandon(): void;
   toggleMute(): void;
+  toggleAimFollow(): boolean;
+  toggleSmartAim(): void;
   buyOre(id: OreLine): void;
   buySp(id: string): void;
   resetSave(): void;
@@ -50,7 +52,7 @@ export class Ui {
           ${save.highest > 0 ? `<div class="row-btns"><button class="btn ghost" data-pick>Choose level…</button></div>` : ''}
           <div class="howto">
             <div><b>Move</b><span>Drag on the left side (WASD)</span></div>
-            <div><b>Aim</b><span>Touch anywhere else (mouse)</span></div>
+            <div><b>Aim</b><span>Drag with your right thumb (mouse)</span></div>
             <div><b>Fire</b><span>Automatic</span></div>
             <div><b>Abilities</b><span>Buy in the shop, tap to fire</span></div>
           </div>
@@ -115,18 +117,29 @@ export class Ui {
     $(this.hud, '[data-shop]').addEventListener('click', () => this.toggleShop(game, !this.shopOpen));
 
     const ab = $(this.hud, '[data-abilities]');
-    availableShots(game.perm).forEach((id, i) => {
+    // A button only fires if the touch both starts and ends on it, so a slipping aim thumb can't trigger it.
+    const press = (b: HTMLElement, act: () => void) => {
+      let armed = -1;
+      b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); armed = e.pointerId; b.classList.add('pressed'); });
+      b.addEventListener('pointerleave', () => { armed = -1; b.classList.remove('pressed'); });
+      b.addEventListener('pointercancel', () => { armed = -1; b.classList.remove('pressed'); });
+      b.addEventListener('pointerup', e => { b.classList.remove('pressed'); if (armed === e.pointerId) act(); armed = -1; });
+    };
+    availableShots(game.perm).forEach(id => {
       const info = SHOT_INFO[id];
-      const b = h(`<button class="ability slot${i}" style="--c:${info.color}" aria-label="${info.name}">
-        <span class="ring"></span><span class="ic">${info.icon}</span><span class="t"></span><span class="nm">${info.name}</span></button>`);
-      b.addEventListener('pointerdown', e => {
-        e.preventDefault(); e.stopPropagation();
-        if (game.shots[id].lvl === 0) { this.toggleShop(game, true); return; }
-        game.triggerShot(id);
-      });
+      const b = h(`<button class="ability" style="--c:${info.color}" aria-label="${info.name}">
+        <span class="ring"></span><span class="ic">${info.icon}</span><span class="t"></span></button>`);
+      press(b, () => { if (game.shots[id].lvl === 0) this.toggleShop(game, true); else game.triggerShot(id); });
       ab.appendChild(b);
       this.abilityEls[id] = b;
     });
+    if (game.hasSmartAim) {
+      const b = h(`<button class="smart-toggle plate" aria-label="Smart Aim"><span>◎</span><small>Auto</small></button>`);
+      const sync = () => b.classList.toggle('on', game.smartAimOn);
+      press(b, () => { this.on.toggleSmartAim(); sync(); });
+      sync();
+      ab.appendChild(b);
+    }
     this.updateHud(game, true);
   }
 
@@ -235,11 +248,13 @@ export class Ui {
     if (this.shopOpen) this.renderShop(game);
   }
 
-  showPause(muted: boolean) {
+  showPause(save: SaveData) {
+    const followLabel = (on: boolean) => `Idle aim: ${on ? 'follows movement' : 'holds direction'}`;
     const el = h(`<div class="modal"><div class="plate sheet small-sheet">
       <div class="sheet-head"><h2>Paused</h2></div>
       <button class="btn go" data-resume><b>Resume</b></button>
-      <div class="row-btns"><button class="btn ghost" data-mute>${muted ? 'Sound off' : 'Sound on'}</button>
+      <div class="row-btns"><button class="btn ghost" data-follow>${followLabel(save.aimFollow)}</button></div>
+      <div class="row-btns"><button class="btn ghost" data-mute>${save.muted ? 'Sound off' : 'Sound on'}</button>
       <button class="btn ghost danger" data-abandon>Leave level</button></div>
       <p class="hint">Leaving keeps the Ore you've mined but earns no stars.</p></div></div>`);
     el.addEventListener('click', e => {
@@ -248,6 +263,7 @@ export class Ui {
       if (t.hasAttribute('data-resume')) { el.remove(); this.on.resume(); }
       if (t.hasAttribute('data-mute')) { this.on.toggleMute(); t.textContent = t.textContent === 'Sound on' ? 'Sound off' : 'Sound on'; }
       if (t.hasAttribute('data-abandon')) { el.remove(); this.on.abandon(); }
+      if (t.hasAttribute('data-follow')) t.textContent = followLabel(this.on.toggleAimFollow());
     });
     this.root.appendChild(el);
   }

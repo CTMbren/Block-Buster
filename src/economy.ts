@@ -68,7 +68,7 @@ export const oreCost = (line: OreLineInfo, n: number) => Math.ceil(line.base * M
 export const blasterPermMult = (n: number) => Math.pow(1.09, n);
 export const critChance = (n: number) => Math.min(0.5, n * 0.02);
 
-export type SpId = 'unlockPoison' | 'slot3' | 'slot4' | 'headStart' | 'freeShot' | 'mastery';
+export type SpId = 'unlockPoison' | 'slot3' | 'slot4' | 'headStart' | 'freeShot' | 'smartAim' | 'mastery';
 export interface SpInfo { id: SpId; name: string; desc: string; cost: (owned: number) => number; max: number; requires?: SpId }
 export const SP_ITEMS: SpInfo[] = [
   { id: 'unlockPoison', name: 'Unlock Poison', desc: 'Adds Poison to the in-level shop.', cost: () => 2, max: 1 },
@@ -76,6 +76,7 @@ export const SP_ITEMS: SpInfo[] = [
   { id: 'slot4', name: 'Fourth ability slot', desc: 'Buy up to 4 specialty shots per level.', cost: () => 6, max: 1, requires: 'slot3' },
   { id: 'headStart', name: 'Head start', desc: 'Begin every level with enough Shards for a first upgrade.', cost: () => 2, max: 1 },
   { id: 'freeShot', name: 'Ready loadout', desc: 'Your first specialty shot each level is free.', cost: () => 4, max: 1 },
+  { id: 'smartAim', name: 'Smart Aim', desc: 'When you are not aiming, the turret picks targets itself: generators, gold and cracked gems first. Toggle it during a level.', cost: () => 3, max: 1 },
   { id: 'mastery', name: 'Mastery', desc: '×1.05 damage to everything. Repeatable forever.', cost: () => 5, max: Infinity },
 ];
 
