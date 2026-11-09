@@ -2,7 +2,7 @@
 
 A top-down hex-grid shooter for the browser, built mobile-first. Drill outward through a crystal mine, break the Keystone, and spend what you mine on upgrades between levels.
 
-**Play:** https://ctmbren.github.io/block-buster/ (deployed automatically from `main` by GitHub Actions)
+**Play:** https://ctmbren.github.io/Block-Buster/ (deployed automatically from `main` by GitHub Actions)
 
 ## How it plays
 
