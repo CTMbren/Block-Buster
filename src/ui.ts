@@ -377,9 +377,9 @@ export class Ui {
       poison: 'Gems you hit keep taking damage over time. Poison also stops regenerating gems from healing.',
     };
     const strWhat: Record<ShotId, string> = {
-      multishot: '+1 extra shot, then 1 more every 2 levels',
-      ricochet: '1 bounce, then 1 more every 1.5 levels',
-      piercing: 'Passes 1 gem, then 1 more every 1.5 levels',
+      multishot: '+1 extra shot, then 1 more every 2 levels; the levels between give +10% damage',
+      ricochet: '1 bounce, then 1 more every 1.5 levels; the levels between give +10% damage',
+      piercing: 'Passes 1 gem, then 1 more every 1.5 levels; the levels between give +10% damage',
       poison: '50% of shot damage per second for 3s, +10% and +0.5s per level',
     };
     const row = (name: string, lv: number, what: string, cur: string, next: string) =>
@@ -406,11 +406,12 @@ export class Ui {
   }
 }
 
-function detail(id: ShotId, s: { extraShots: number; bounces: number; pierces: number; poisonFrac: number }) {
+function detail(id: ShotId, s: { extraShots: number; bounces: number; pierces: number; poisonFrac: number; dmgBonus: number }) {
+  const dmg = s.dmgBonus > 1.001 ? ` +${Math.round((s.dmgBonus - 1) * 100)}% dmg` : '';
   switch (id) {
-    case 'multishot': return `+${s.extraShots} shots`;
-    case 'ricochet': return `${s.bounces} bounces`;
-    case 'piercing': return `through ${s.pierces}`;
+    case 'multishot': return `+${s.extraShots} shots${dmg}`;
+    case 'ricochet': return `${s.bounces} bounces${dmg}`;
+    case 'piercing': return `through ${s.pierces}${dmg}`;
     case 'poison': return `${Math.round(s.poisonFrac * 100)}% dmg/s`;
   }
 }

@@ -262,6 +262,8 @@ export class Game {
 
   private fire(b: ReturnType<typeof blasterStats>) {
     if (this.projectiles.length > 400) return;
+    let bonus = 1;
+    for (const id of ['multishot', 'ricochet', 'piercing'] as ShotId[]) if (this.isActive(id)) bonus *= this.shotStats(id).dmgBonus;
     const multi = this.isActive('multishot') ? this.shotStats('multishot').extraShots : 0;
     const pier = this.isActive('piercing') ? this.shotStats('piercing').pierces : 0;
     const bounce = this.isActive('ricochet') ? this.shotStats('ricochet').bounces : 0;
@@ -276,7 +278,7 @@ export class Game {
       this.projectiles.push({
         x: this.player.x + Math.cos(a) * 14, y: this.player.y + Math.sin(a) * 14,
         vx: Math.cos(a) * b.speed, vy: Math.sin(a) * b.speed,
-        dmg: b.damage * (crit ? 2 : 1), dist: b.range * HEX_W, pierce: pier, bounce,
+        dmg: b.damage * bonus * (crit ? 2 : 1), dist: b.range * HEX_W, pierce: pier, bounce,
         poison: pz ? { frac: pz.poisonFrac, time: pz.poisonTime } : null,
         special, crit, last: -1, color, piercing: pier > 0, bounced: false, breaks: 0,
       });

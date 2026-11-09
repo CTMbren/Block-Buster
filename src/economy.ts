@@ -116,6 +116,8 @@ export function shotStats(id: ShotId, inLevel: number, p: Perm) {
     active: 3 + 5 * (1 - Math.pow(0.88, durN)),
     cooldown: Math.max(3, 15 * Math.pow(0.92, cdN)),
     extraShots: 1 + Math.floor(s / 2),
+    /** Strength levels that don't add a shot/bounce/pierce give +10% damage while the shot is active. */
+    dmgBonus: 1 + 0.1 * (id === 'multishot' ? s - Math.floor(s / 2) : id === 'poison' ? 0 : s - Math.floor(s / 1.5)),
     bounces: 1 + Math.floor(s / 1.5),
     pierces: 1 + Math.floor(s / 1.5),
     poisonFrac: 0.5 + 0.1 * s, // poison damage per second as a fraction of shot damage
